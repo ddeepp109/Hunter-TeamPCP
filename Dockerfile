@@ -25,4 +25,6 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Use shell form so $PORT is expanded at runtime (Railway compatibility)
-CMD gunicorn --bind "0.0.0.0:$PORT" --workers 1 --threads 4 --timeout 120 --preload "webapp:create_app()"
+# Do NOT use --preload: it runs create_app() in the master process,
+# and the monitor thread does not survive the fork into workers.
+CMD gunicorn --bind "0.0.0.0:$PORT" --workers 1 --threads 4 --timeout 120 "webapp:create_app()"
