@@ -19,6 +19,7 @@ a:hover { text-decoration:underline; }
 /* ── Sidebar ─────────────────────────────── */
 .sidebar { width:240px; background:var(--bg2); border-right:1px solid var(--border); padding:0; display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; z-index:10; }
 .sidebar .brand { padding:20px 18px 16px; border-bottom:1px solid var(--border); }
+.sidebar .brand .logo { display:block; max-width:140px; margin-bottom:10px; }
 .sidebar .brand .org { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--red); margin-bottom:4px; }
 .sidebar .brand .team { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
 .sidebar .brand .team em { font-style:normal; color:var(--cyan); }
@@ -156,7 +157,7 @@ input:focus, select:focus { border-color:var(--accent); }
 .onboard-footer .btn-go:hover { background:var(--green); }
 
 @media(max-width:800px){
-  .sidebar{width:60px;} .sidebar .brand span,.sidebar .brand .tagline,.sidebar .brand .target,.sidebar nav a span{display:none;} .main{margin-left:60px;padding:16px;}
+  .sidebar{width:60px;} .sidebar .brand .logo,.sidebar .brand span,.sidebar .brand .tagline,.sidebar .brand .target,.sidebar nav a span{display:none;} .main{margin-left:60px;padding:16px;}
   .onboard-box{max-width:95%;}
 }
 </style>
@@ -165,6 +166,7 @@ input:focus, select:focus { border-color:var(--accent); }
 
 <aside class="sidebar">
   <div class="brand">
+    <a href="https://trendaisecurity.com/" target="_blank" rel="noopener"><img class="logo" src="https://cdn.sanity.io/images/ch6z6vqj/production/bbe16902544cfbf68aaf3e756cc060e0f07483ef-199x40.svg" alt="TrendAI"></a>
     <div class="org">TrendAI ZDI</div>
     <div class="team">Threat Hunter <em>Team</em></div>
     <div class="tagline">PyPI Supply-Chain Threat Monitor</div>
@@ -184,6 +186,7 @@ input:focus, select:focus { border-color:var(--accent); }
 <div class="onboard-overlay" id="onboard-overlay">
   <div class="onboard-box">
     <div class="onboard-header">
+      <img src="https://cdn.sanity.io/images/ch6z6vqj/production/bbe16902544cfbf68aaf3e756cc060e0f07483ef-199x40.svg" alt="TrendAI" style="height:24px;margin-bottom:10px;filter:brightness(0) invert(1);">
       <div class="org-tag">TrendAI ZDI — Threat Hunter Team</div>
       <h2>Welcome to the <em>TeamPCP</em> Hunter</h2>
       <p>Real-time PyPI supply-chain threat detection platform</p>
