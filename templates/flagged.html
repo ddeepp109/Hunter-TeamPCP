@@ -21,8 +21,8 @@
   <table>
     <thead>
       <tr>
-        <th>Severity</th><th>Package</th><th>PyPI Version</th><th>GitHub Releases</th>
-        <th>GitHub</th><th>Reason</th><th>Flagged At</th><th>Recheck</th>
+        <th>Confidence</th><th>Severity</th><th>Package</th><th>PyPI Version</th><th>GitHub Releases</th>
+        <th>Risk Signals</th><th>GitHub</th><th>Reason</th><th>Flagged At</th><th>Recheck</th>
       </tr>
     </thead>
     <tbody id="flag-body">
@@ -58,22 +58,35 @@ async function reload(){
 
 function render(data){
   const tb=document.getElementById('flag-body');
-  if(!data.length){tb.innerHTML='<tr><td colspan="7" class="empty-state">No flagged packages match the filters.</td></tr>';return;}
+  if(!data.length){tb.innerHTML='<tr><td colspan="10" class="empty-state">No flagged packages match the filters.</td></tr>';return;}
   tb.innerHTML=data.map((f,i)=>{
     const gh=f.github_owner?`<a href="https://github.com/${esc(f.github_owner)}/${esc(f.github_repo)}" target="_blank">${esc(f.github_owner)}/${esc(f.github_repo)}</a>`:'—';
     const ghRels=(f.github_releases||[]).slice(0,3).map(esc).join(', ')||'None';
     const rchk=recheckLabel(f.flagged_at);
+    const signals=renderSignals(f);
+    const conf=f.confidence_score||0;
+    const confColor=conf>=70?'var(--red)':conf>=50?'var(--orange)':conf>=30?'var(--yellow)':'var(--text2)';
     return `<tr style="cursor:pointer;" onclick="showDetail(${i})">
+      <td><strong style="color:${confColor};font-size:16px;">${conf}</strong><span class="text-muted">/100</span></td>
       <td><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span></td>
       <td><a href="${esc(f.pypi_link)}" target="_blank" onclick="event.stopPropagation()">${esc(f.name)}</a></td>
       <td><code style="color:var(--green);">${esc(f.pypi_version||f.version)}</code></td>
       <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code>${esc(ghRels)}</code></td>
+      <td>${signals}</td>
       <td>${gh}</td>
-      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.reason)}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.reason)}</td>
       <td class="text-muted" style="white-space:nowrap;">${esc((f.flagged_at||'').slice(0,19))}</td>
       <td style="white-space:nowrap;">${rchk}</td>
     </tr>`;
   }).join('');
+}
+
+function renderSignals(f){
+  const chips=[];
+  if(f.rapid_publish_gap!=null&&f.rapid_publish_gap<30)chips.push(`<span class="risk-chip rapid-publish">⚡ RAPID ${Math.round(f.rapid_publish_gap)}min</span>`);
+  if(f.monthly_downloads&&f.monthly_downloads>50000)chips.push(`<span class="risk-chip high-value">🎯 ${(f.monthly_downloads/1000).toFixed(0)}K/mo</span>`);
+  if(f.yanked_versions&&f.yanked_versions.length)chips.push(`<span class="risk-chip yanked">⚠ YANKED(${f.yanked_versions.join(',')}) </span>`);
+  return chips.length?chips.join(' '):'<span class="text-muted">—</span>';
 }
 function recheckLabel(flaggedAt){
   if(!flaggedAt)return'<span class="text-muted">—</span>';
@@ -89,6 +102,20 @@ function showDetail(i){
   const gh=f.github_owner?`<a href="https://github.com/${esc(f.github_owner)}/${esc(f.github_repo)}" target="_blank">${esc(f.github_owner)}/${esc(f.github_repo)}</a>`:'None found';
   const ghRels=(f.github_releases||[]).slice(0,10);
   const ghTags=(f.github_tags||[]).slice(0,10);
+  const conf=f.confidence_score||0;
+  const confColor=conf>=70?'var(--red)':conf>=50?'var(--orange)':conf>=30?'var(--yellow)':'var(--green)';
+  let confHtml=`
+    <div style="margin-top:16px;padding:16px;background:var(--bg);border-radius:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:600;">Confidence Score</span>
+        <span style="font-size:24px;font-weight:bold;color:${confColor};">${conf}<span style="font-size:14px;color:var(--text2);">/100</span></span>
+      </div>
+      <div style="height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${conf}%;background:${confColor};border-radius:4px;transition:width .3s;"></div>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text2);">${conf>=70?'\u26a0\ufe0f Very suspicious — multiple risk signals firing':conf>=50?'\u26a0\ufe0f Elevated risk — review recommended':conf>=30?'Baseline flag — version mismatch detected':'Low risk'}</div>
+    </div>
+  `;
   let vHtml='';
   if(f.verification){
     const v=f.verification;
@@ -119,6 +146,25 @@ function showDetail(i){
       ${ghTags.map(t=>`<code style="display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;background:var(--bg2);border-radius:4px;font-size:12px;">${esc(t)}</code>`).join('')}
     </div>`:''}
   `;
+  // Risk signals section
+  let riskHtml='';
+  const riskItems=[];
+  if(f.rapid_publish_gap!=null){
+    const isRapid=f.rapid_publish_gap<30;
+    const style=isRapid?'background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.2);':'background:var(--bg);border:1px solid var(--border);';
+    riskItems.push(`<div style="padding:8px 12px;border-radius:6px;${style}"><span style="color:${isRapid?'var(--orange)':'var(--text2)'};font-weight:600;">${isRapid?'⚡ Rapid Publish':'⏱ Normal Pace'}</span> — Published ${Math.round(f.rapid_publish_gap)} min after previous version. ${isRapid?'<em>TeamPCP pattern: fix broken payload then republish quickly.</em>':''}</div>`);
+  }
+  if(f.monthly_downloads!=null){
+    const isHigh=f.monthly_downloads>50000;
+    const style=isHigh?'background:rgba(188,140,255,.08);border:1px solid rgba(188,140,255,.2);':'background:var(--bg);border:1px solid var(--border);';
+    riskItems.push(`<div style="padding:8px 12px;border-radius:6px;${style}"><span style="color:${isHigh?'var(--purple)':'var(--text2)'};font-weight:600;">${isHigh?'🎯 High-Value Target':'📦 Download Count'}</span> — ${f.monthly_downloads.toLocaleString()} downloads/month. ${isHigh?'<em>Attractive supply-chain target.</em>':''}</div>`);
+  }
+  if(f.yanked_versions&&f.yanked_versions.length){
+    riskItems.push(`<div style="padding:8px 12px;border-radius:6px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.2);"><span style="color:var(--red);font-weight:600;">⚠ Yanked Adjacent Versions</span> — ${f.yanked_versions.join(', ')} were yanked. <em>Pattern: attacker's failed attempt gets yanked, then they re-publish.</em></div>`);
+  }
+  if(riskItems.length){
+    riskHtml=`<h3 style="margin-top:16px;">🔍 Risk Signals (TeamPCP Detection)</h3><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">${riskItems.join('')}</div>`;
+  }
   document.getElementById('modal-content').innerHTML=`
     <h2 style="margin-bottom:16px;"><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span> ${esc(f.name)}</h2>
     <table style="font-size:13px;">
@@ -130,6 +176,8 @@ function showDetail(i){
     <tr><td class="text-muted" style="padding:4px 14px 4px 0;">1hr Recheck</td><td>${recheckLabel(f.flagged_at)}</td></tr>
     </table>
     ${versionsHtml}
+    ${confHtml}
+    ${riskHtml}
     <div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:8px;font-size:13px;">${esc(f.reason)}</div>
     ${vHtml}
     <div style="margin-top:16px;display:flex;gap:8px;">

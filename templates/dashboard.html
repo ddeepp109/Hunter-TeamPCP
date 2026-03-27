@@ -11,8 +11,18 @@
   <div class="card"><div class="label">Total Flagged</div><div class="value critical" id="kpi-flagged">–</div></div>
   <div class="card"><div class="label">Critical</div><div class="value critical" id="kpi-critical">–</div></div>
   <div class="card"><div class="label">High</div><div class="value high" id="kpi-high">–</div></div>
-  <div class="card"><div class="label">Medium</div><div class="value medium" id="kpi-medium">–</div></div>
   <div class="card"><div class="label">Low</div><div class="value low" id="kpi-low">–</div></div>
+  <div class="card"><div class="label">Avg Confidence</div><div class="value" style="color:var(--orange);" id="kpi-confidence">–</div></div>
+  <div class="card">
+    <div class="label">Workers / Rate</div>
+    <div class="value" style="color:var(--cyan);" id="kpi-workers">–</div>
+    <div style="margin-top:6px;" id="kpi-worker-dots"></div>
+  </div>
+  <div class="card">
+    <div class="label">Batch Progress</div>
+    <div class="value" style="color:var(--accent);" id="kpi-batch">–</div>
+    <div class="progress-bar" style="margin-top:6px;"><div class="fill cyan" id="kpi-bar" style="width:0%;"></div></div>
+  </div>
 </div>
 
 <!-- Monitor controls -->
@@ -46,8 +56,8 @@
 <div class="tbl-wrap">
   <div class="tbl-head"><h2>Latest Flagged Packages</h2><a href="/flagged" class="btn sm">View All →</a></div>
   <table>
-    <thead><tr><th>Severity</th><th>Package</th><th>GitHub Repo</th><th>PyPI Version</th><th>GitHub Releases</th><th>Reason</th><th>Time</th></tr></thead>
-    <tbody id="flagged-body"><tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+    <thead><tr><th>Confidence</th><th>Severity</th><th>Package</th><th>GitHub Repo</th><th>PyPI Version</th><th>GitHub Releases</th><th>Risk Signals</th><th>Reason</th></tr></thead>
+    <tbody id="flagged-body"><tr><td colspan="8" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
   </table>
 </div>
 {% endblock %}
@@ -60,7 +70,6 @@ async function refreshDash(){
   document.getElementById('kpi-flagged').textContent=s.total_flagged;
   document.getElementById('kpi-critical').textContent=s.severity_counts.CRITICAL||0;
   document.getElementById('kpi-high').textContent=s.severity_counts.HIGH||0;
-  document.getElementById('kpi-medium').textContent=s.severity_counts.MEDIUM||0;
   document.getElementById('kpi-low').textContent=s.severity_counts.LOW||0;
   document.getElementById('ctl-status').textContent=s.running?'Running':'Stopped';
   document.getElementById('ctl-status').style.color=s.running?'var(--green)':'var(--red)';
@@ -68,6 +77,31 @@ async function refreshDash(){
   document.getElementById('ctl-lastpoll').textContent=s.last_poll||'–';
   document.getElementById('ctl-nextpoll').textContent=s.next_poll||'–';
   document.getElementById('ctl-interval').textContent=s.poll_interval;
+
+  // Queue / workers
+  const q = s.queue || {};
+  document.getElementById('kpi-workers').textContent = (s.num_workers||4) + ' / ' + (q.processing_rate||0) + ' pkg/min';
+  document.getElementById('kpi-batch').textContent = q.batch_total>0 ? q.batch_done+'/'+q.batch_total : '–';
+  document.getElementById('kpi-bar').style.width = (q.batch_progress||0) + '%';
+
+  // Worker dots
+  const qd = await api('/api/queue');
+  const wd = document.getElementById('kpi-worker-dots');
+  let dots='';
+  for(let i=0;i<(s.num_workers||4);i++){
+    const busy = (qd.active||[]).some(a=>a.worker_id===i);
+    dots+=`<span class="worker-dot ${busy?'busy':'idle'}"></span>`;
+  }
+  wd.innerHTML=dots;
+
+  // Compute average confidence score among flagged
+  const flagged=await api('/api/flagged');
+  if(flagged.length){
+    const avg=Math.round(flagged.reduce((s,f)=>s+(f.confidence_score||0),0)/flagged.length);
+    document.getElementById('kpi-confidence').textContent=avg+'/100';
+  } else {
+    document.getElementById('kpi-confidence').textContent='–';
+  }
 }
 
 async function refreshRecent(){
@@ -85,21 +119,33 @@ async function refreshRecent(){
 async function refreshFlagged(){
   const data=await api('/api/flagged');
   const tb=document.getElementById('flagged-body');
-  if(!data.length){tb.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">No flagged packages yet.</td></tr>';return;}
+  if(!data.length){tb.innerHTML='<tr><td colspan="8" class="text-muted" style="text-align:center;padding:20px;">No flagged packages yet.</td></tr>';return;}
   tb.innerHTML=data.slice(0,10).map(f=>{
     const ghRels=(f.github_releases||[]).slice(0,3).map(esc).join(', ')||'None';
     const ghOwner=f.github_owner||'';
     const ghRepo=f.github_repo||'';
     const ghLink=(ghOwner&&ghRepo)?`<a href="https://github.com/${esc(ghOwner)}/${esc(ghRepo)}" target="_blank" style="color:var(--cyan);">${esc(ghOwner)}/${esc(ghRepo)}</a>`:'<span class="text-muted">–</span>';
+    const signals=renderSignals(f);
+    const conf=f.confidence_score||0;
+    const confColor=conf>=70?'var(--red)':conf>=50?'var(--orange)':conf>=30?'var(--yellow)':'var(--text2)';
     return `<tr>
+    <td><strong style="color:${confColor};font-size:16px;">${conf}</strong><span class="text-muted">/100</span></td>
     <td><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span></td>
     <td><a href="${esc(f.pypi_link)}" target="_blank">${esc(f.name)}</a></td>
     <td>${ghLink}</td>
     <td><code style="color:var(--green);">${esc(f.pypi_version||f.version)}</code></td>
     <td><code>${esc(ghRels)}</code></td>
-    <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.reason)}</td>
-    <td class="text-muted">${esc(f.flagged_at||'')}</td>
+    <td>${signals}</td>
+    <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.reason)}</td>
   </tr>`;}).join('');
+}
+
+function renderSignals(f){
+  const chips=[];
+  if(f.rapid_publish_gap!=null&&f.rapid_publish_gap<30)chips.push(`<span class="risk-chip rapid-publish">⚡ RAPID ${Math.round(f.rapid_publish_gap)}min</span>`);
+  if(f.monthly_downloads&&f.monthly_downloads>50000)chips.push(`<span class="risk-chip high-value">🎯 ${(f.monthly_downloads/1000).toFixed(0)}K/mo</span>`);
+  if(f.yanked_versions&&f.yanked_versions.length)chips.push(`<span class="risk-chip yanked">⚠ YANKED(${f.yanked_versions.join(',')}) </span>`);
+  return chips.length?chips.join(' '):'<span class="text-muted">—</span>';
 }
 
 function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}

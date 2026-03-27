@@ -3,10 +3,9 @@ PyPI ↔ GitHub Release Monitor – Web UI (24/7 pipeline).
 
 Run:
     python webapp.py
-    # Visit http://127.0.0.1:5000
+    # Visit http://127.0.0.1:8050
 """
 
-import json
 import logging
 import os
 import threading
@@ -18,9 +17,10 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify, render_template, request
 
 import config
+import db as _db
 from flagger import FlaggedPackage, classify, save_flagged, _is_dev_version
 from github_checker import verify_version
-from github_resolver import fetch_pypi_metadata, find_github_repo
+from pipeline import Pipeline, Status
 from pypi_feed import FeedPoller, PackageUpdate
 
 # ── Flask app ───────────────────────────────────────────────────────────────
@@ -30,7 +30,11 @@ app = Flask(__name__)
 # ── In-memory state shared between monitor thread & web routes ──────────────
 
 class MonitorState:
-    """Thread-safe shared state for the monitoring pipeline."""
+    """Thread-safe shared state for the monitoring pipeline.
+
+    Persistent data (flagged, scans, settings) lives in SQLite.
+    Only ephemeral runtime state (queue snapshot, log buffer) is in-memory.
+    """
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -38,120 +42,84 @@ class MonitorState:
         self.started_at: str | None = None
         self.last_poll: str | None = None
         self.next_poll: str | None = None
-        self.total_scanned = 0
-        self.total_flagged = 0
-        self.flagged: list[dict] = []          # newest first
-        self.recent_scans: deque = deque(maxlen=200)  # last 200 scanned
-        self.severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
-        self.log_lines: deque = deque(maxlen=500)
         self.poll_interval = config.POLL_INTERVAL_SECONDS
         self._stop_event = threading.Event()
-
-    # --- helpers ---
+        # Queue status from pipeline (ephemeral)
+        self.queue_snapshot_data: dict = {}
+        # In-memory log buffer (also persisted to DB)
+        self.log_lines: deque = deque(maxlen=500)
 
     def add_log(self, msg: str):
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        formatted = f"[{ts}]  {msg}"
         with self.lock:
-            self.log_lines.appendleft(f"[{ts}]  {msg}")
+            self.log_lines.appendleft(formatted)
+        try:
+            _db.add_log(msg)
+        except Exception:
+            pass
 
     def add_flagged(self, flag: FlaggedPackage):
         d = asdict(flag)
-        with self.lock:
-            # Dedup: don't add if same (name, version) already exists
-            key = (flag.name, flag.version)
-            if any((f.get("name"), f.get("version")) == key for f in self.flagged):
-                return
-            self.flagged.insert(0, d)
-            self.total_flagged += 1
-            sev = flag.severity
-            if sev in self.severity_counts:
-                self.severity_counts[sev] += 1
+        _db.upsert_flagged(d)
 
     def add_scan(self, name: str, version: str, flagged: bool):
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        with self.lock:
-            self.total_scanned += 1
-            self.recent_scans.appendleft({
-                "name": name,
-                "version": version,
-                "flagged": flagged,
-                "time": ts,
-            })
+        _db.add_scan(name, version, flagged)
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {
-                "running": self.running,
-                "started_at": self.started_at,
-                "last_poll": self.last_poll,
-                "next_poll": self.next_poll,
-                "total_scanned": self.total_scanned,
-                "total_flagged": self.total_flagged,
-                "severity_counts": dict(self.severity_counts),
-                "poll_interval": self.poll_interval,
-            }
+            qs = self.queue_snapshot_data
+        sev = _db.get_severity_counts()
+        total_flagged = _db.get_flagged_count()
+        total_scanned = _db.get_total_scanned()
+        return {
+            "running": self.running,
+            "started_at": self.started_at or _db.get_setting("started_at"),
+            "last_poll": self.last_poll or _db.get_setting("last_poll"),
+            "next_poll": self.next_poll,
+            "total_scanned": total_scanned,
+            "total_flagged": total_flagged,
+            "severity_counts": sev,
+            "poll_interval": self.poll_interval,
+            "num_workers": config.NUM_WORKERS,
+            "queue": {
+                "queued": len(qs.get("queued", [])),
+                "active": len(qs.get("active", [])),
+                "batch_total": qs.get("batch_total", 0),
+                "batch_done": qs.get("batch_done", 0),
+                "batch_progress": qs.get("batch_progress", 0),
+                "processing_rate": qs.get("processing_rate", 0),
+            },
+            "cache_stats": qs.get("cache_stats", {}),
+        }
 
 
 state = MonitorState()
 
-# ── Load persisted flagged packages on startup ──────────────────────────────
+# ── Background monitor thread (Pipeline-based) ────────────────────────────
 
-def _load_persisted_flags():
-    path = config.FLAGGED_OUTPUT_FILE
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path, "r") as fh:
-            data = json.load(fh)
-        with state.lock:
-            state.flagged = list(reversed(data))  # newest first
-            state.total_flagged = len(data)
-            for d in data:
-                sev = d.get("severity", "")
-                if sev in state.severity_counts:
-                    state.severity_counts[sev] += 1
-    except Exception:
-        pass
+# Create the global pipeline instance
+pipeline = Pipeline(
+    num_workers=config.NUM_WORKERS,
+    on_flagged=lambda f: (state.add_flagged(f), save_flagged([f])),
+    on_scan=lambda n, v, f: state.add_scan(n, v, f),
+    on_log=lambda m: state.add_log(m),
+    on_status=lambda w: _update_queue_snapshot(),
+)
 
 
-# ── Background monitor thread ──────────────────────────────────────────────
-
-def _analyse_one(update: PackageUpdate) -> FlaggedPackage | None:
-    """Run the full pipeline for a single package (same as monitor.py)."""
-    state.add_log(f"Analysing {update.name} {update.version} …")
-
-    meta = fetch_pypi_metadata(update.name)
-    if meta is None:
-        state.add_log(f"  ⚠ Could not fetch metadata for {update.name}")
-        return None
-
-    gh = find_github_repo(meta)
-    verification = None
-
-    if gh:
-        owner, repo = gh
-        state.add_log(f"  GitHub repo: {owner}/{repo}")
-        verification = verify_version(update.name, update.version, owner, repo)
-    else:
-        state.add_log(f"  No GitHub repo found for {update.name}")
-
-    flag = classify(
-        package_name=update.name,
-        version=update.version,
-        pypi_link=update.link,
-        meta=meta,
-        github_repo_found=gh is not None,
-        verification=verification,
-        pub_date=update.pub_date,
-    )
-    return flag
+def _update_queue_snapshot():
+    """Refresh the queue snapshot in shared state."""
+    with state.lock:
+        state.queue_snapshot_data = pipeline.queue_snapshot()
 
 
 def _monitor_loop():
-    """Continuous polling loop that runs in a daemon thread."""
+    """Continuous polling loop using concurrent pipeline."""
     poller = FeedPoller()
-    state.add_log("Monitor thread started.")
+    state.add_log(f"Monitor started ({config.NUM_WORKERS} workers).")
     state.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    _db.set_setting("started_at", state.started_at)
     poll_count = 0
 
     while not state._stop_event.is_set():
@@ -159,54 +127,29 @@ def _monitor_loop():
         with state.lock:
             state.running = True
             state.last_poll = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        _db.set_setting("last_poll", state.last_poll)
+
+        # Sync already-flagged keys from DB
+        already = _db.get_flagged_keys()
+        pipeline.set_already_flagged(already)
 
         state.add_log("Polling PyPI RSS feed …")
         updates = poller.poll_once()
 
-        # Build set of already-flagged (name, version) to avoid duplicates
-        with state.lock:
-            already_flagged = {
-                (d.get("name", ""), d.get("version", ""))
-                for d in state.flagged
-            }
-
         if updates:
             state.add_log(f"Found {len(updates)} new updates.")
-            batch_flagged: list[FlaggedPackage] = []
-
-            for u in updates:
-                if state._stop_event.is_set():
-                    break
-                # Skip if already flagged for this exact version
-                if (u.name, u.version) in already_flagged:
-                    state.add_scan(u.name, u.version, True)
-                    state.add_log(f"  ↺ {u.name} {u.version} – already flagged, skipping re-check")
-                    continue
-                try:
-                    flag = _analyse_one(u)
-                    was_flagged = flag is not None
-                    state.add_scan(u.name, u.version, was_flagged)
-                    if flag:
-                        batch_flagged.append(flag)
-                        state.add_flagged(flag)
-                        state.add_log(
-                            f"  🚩 [{flag.severity}] {flag.name} {flag.version} – {flag.reason[:80]}"
-                        )
-                    else:
-                        state.add_log(f"  ✓ {u.name} {u.version} – clean")
-                except Exception as exc:
-                    state.add_log(f"  ✗ Error analysing {u.name}: {exc}")
-
-            if batch_flagged:
-                save_flagged(batch_flagged)
-                state.add_log(f"Batch done – {len(batch_flagged)} flagged out of {len(updates)}.")
-            else:
-                state.add_log(f"Batch done – {len(updates)} packages, none flagged.")
+            # Enqueue all updates (pipeline handles skip/dedup/priority)
+            pipeline.enqueue(updates)
+            _update_queue_snapshot()
+            # Process concurrently
+            pipeline.process_queue()
+            _update_queue_snapshot()
         else:
             state.add_log("No new updates in feed.")
 
-        # Re-verify flagged packages that are >= 1 hour old
-        _reverify_stale_flags()
+        # Re-verify flagged packages >= 1 hour old
+        if poll_count % 3 == 0:  # every 3rd poll cycle
+            _reverify_stale_flags()
 
         # Calculate next poll time
         next_time = datetime.now(timezone.utc).timestamp() + state.poll_interval
@@ -238,42 +181,32 @@ def _reverify_stale_flags():
     - The version is now recognised as dev/pre-release (rule change).
     - The resolver no longer finds a GitHub repo (so we skip it).
     """
-    now = datetime.now(timezone.utc)
-    recheck_threshold = timedelta(hours=1)
-
-    with state.lock:
-        snapshot = list(state.flagged)
-
-    # Filter to entries that are at least 1 hour old
-    candidates = []
-    for entry in snapshot:
-        flagged_at_str = entry.get("flagged_at", "")
-        if not flagged_at_str:
-            continue
-        try:
-            flagged_at = datetime.fromisoformat(flagged_at_str)
-            if flagged_at.tzinfo is None:
-                flagged_at = flagged_at.replace(tzinfo=timezone.utc)
-            age = now - flagged_at
-            if age >= recheck_threshold:
-                candidates.append((entry, age))
-        except (ValueError, TypeError):
-            continue
+    candidates = _db.get_flagged_for_reverify(min_age_seconds=1800)
 
     if not candidates:
-        return  # nothing old enough to re-check yet
+        return
 
+    now = datetime.now(timezone.utc)
     state.add_log(
         f"Re-verifying {len(candidates)} flagged packages (≥1 hour old) …"
     )
 
     resolved_keys: list[tuple] = []
 
-    for entry, age in candidates:
+    for entry in candidates:
         if state._stop_event.is_set():
             break
         name = entry.get("name", "")
         version = entry.get("version", "")
+        flagged_at_str = entry.get("flagged_at", "")
+        try:
+            flagged_at = datetime.fromisoformat(flagged_at_str)
+            if flagged_at.tzinfo is None:
+                flagged_at = flagged_at.replace(tzinfo=timezone.utc)
+            age = now - flagged_at
+        except (ValueError, TypeError):
+            age = timedelta(hours=2)  # assume old
+
         age_str = f"{int(age.total_seconds() // 3600)}h{int((age.total_seconds() % 3600) // 60)}m"
 
         # Skip dev/pre-release versions (new rule)
@@ -288,6 +221,10 @@ def _reverify_stale_flags():
             continue
 
         try:
+            # Invalidate caches so we get fresh GitHub data
+            from pipeline import invalidate_caches_for
+            invalidate_caches_for(name, owner, repo_name)
+
             vr = verify_version(name, version, owner, repo_name)
             if vr.has_release or vr.has_tag:
                 resolved_keys.append((name, version))
@@ -302,38 +239,10 @@ def _reverify_stale_flags():
             pass  # leave flag as-is if re-check fails
 
     if resolved_keys:
-        resolved_set = set(resolved_keys)
-        with state.lock:
-            state.flagged = [
-                d for d in state.flagged
-                if (d.get("name", ""), d.get("version", "")) not in resolved_set
-            ]
-            state.total_flagged = len(state.flagged)
-            # Recount severities
-            state.severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "INFO": 0}
-            for d in state.flagged:
-                sev = d.get("severity", "")
-                if sev in state.severity_counts:
-                    state.severity_counts[sev] += 1
-
-        # Also update the persisted file
-        path = config.FLAGGED_OUTPUT_FILE
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as fh:
-                    data = json.load(fh)
-                data = [
-                    d for d in data
-                    if (d.get("name", ""), d.get("version", "")) not in resolved_set
-                ]
-                with open(path, "w") as fh:
-                    json.dump(data, fh, indent=2, default=str)
-            except Exception:
-                pass
-
-        state.add_log(f"Re-verification done – cleared {len(resolved_keys)} stale flags.")
+        removed = _db.delete_flagged_batch(resolved_keys)
+        state.add_log(f"Re-verification done – cleared {removed} stale flags.")
     else:
-        state.add_log("Re-verification done – no stale flags found.")
+        state.add_log("Re-verification done – no stale flags resolved.")
 
 
 _monitor_thread: threading.Thread | None = None
@@ -376,6 +285,11 @@ def settings_page():
     return render_template("settings.html")
 
 
+@app.route("/queue")
+def queue_page():
+    return render_template("queue.html")
+
+
 # ── Flask routes – API ──────────────────────────────────────────────────────
 
 @app.route("/api/status")
@@ -387,31 +301,37 @@ def api_status():
 def api_flagged():
     severity = request.args.get("severity", "").upper()
     search = request.args.get("search", "").lower()
-    with state.lock:
-        data = list(state.flagged)
-
-    if severity:
-        data = [d for d in data if d.get("severity") == severity]
-    if search:
-        data = [
-            d for d in data
-            if search in d.get("name", "").lower()
-            or search in d.get("author", "").lower()
-            or search in d.get("reason", "").lower()
-        ]
+    data = _db.get_all_flagged(severity=severity, search=search)
     return jsonify(data)
 
 
 @app.route("/api/recent")
 def api_recent():
-    with state.lock:
-        return jsonify(list(state.recent_scans))
+    return jsonify(_db.get_recent_scans(limit=200))
+
+
+@app.route("/api/queue")
+def api_queue():
+    return jsonify(pipeline.queue_snapshot())
 
 
 @app.route("/api/logs")
 def api_logs():
+    # Combine in-memory buffer (most recent) with DB
     with state.lock:
-        return jsonify(list(state.log_lines))
+        mem_logs = list(state.log_lines)
+    if len(mem_logs) >= 500:
+        return jsonify(mem_logs)
+    # Fill from DB if in-memory buffer is short (e.g. after restart)
+    db_logs = _db.get_logs(limit=500)
+    # Merge: mem_logs are newest, db_logs fill the gap
+    seen = set(mem_logs)
+    for log in db_logs:
+        if log not in seen:
+            mem_logs.append(log)
+        if len(mem_logs) >= 500:
+            break
+    return jsonify(mem_logs)
 
 
 @app.route("/api/monitor/start", methods=["POST"])
@@ -434,17 +354,27 @@ def api_interval():
         return jsonify({"error": "interval must be >= 10 seconds"}), 400
     state.poll_interval = int(val)
     config.POLL_INTERVAL_SECONDS = int(val)
+    _db.set_setting("poll_interval", str(int(val)))
     state.add_log(f"Poll interval changed to {int(val)}s.")
     return jsonify({"interval": int(val)})
 
 
+@app.route("/api/settings/workers", methods=["POST"])
+def api_workers():
+    data = request.get_json(silent=True) or {}
+    val = data.get("workers")
+    if val is None or not isinstance(val, int) or val < 1 or val > 16:
+        return jsonify({"error": "workers must be 1-16"}), 400
+    config.NUM_WORKERS = val
+    pipeline._num_workers = val
+    _db.set_setting("num_workers", str(val))
+    state.add_log(f"Worker count changed to {val}.")
+    return jsonify({"workers": val})
+
+
 @app.route("/api/trusted")
 def api_trusted():
-    path = config.TRUSTED_PUBLISHERS_FILE
-    if not os.path.exists(path):
-        return jsonify([])
-    with open(path) as fh:
-        return jsonify(json.load(fh))
+    return jsonify(_db.get_trusted_publishers())
 
 
 @app.route("/api/trusted", methods=["POST"])
@@ -455,22 +385,8 @@ def api_trusted_add():
     if not name:
         return jsonify({"error": "name required"}), 400
 
-    path = config.TRUSTED_PUBLISHERS_FILE
-    existing = []
-    if os.path.exists(path):
-        with open(path) as fh:
-            existing = json.load(fh)
-
-    if any(e["name"].lower() == name.lower() for e in existing):
+    if not _db.add_trusted_publisher(name, note):
         return jsonify({"error": "already exists"}), 409
-
-    existing.append({"name": name, "note": note})
-    with open(path, "w") as fh:
-        json.dump(existing, fh, indent=2)
-
-    # Clear the cached trusted set so flagger reloads
-    import flagger
-    flagger._trusted = None
 
     state.add_log(f"Added trusted publisher: {name}")
     return jsonify({"ok": True})
@@ -478,22 +394,8 @@ def api_trusted_add():
 
 @app.route("/api/trusted/<name>", methods=["DELETE"])
 def api_trusted_delete(name: str):
-    path = config.TRUSTED_PUBLISHERS_FILE
-    if not os.path.exists(path):
+    if not _db.remove_trusted_publisher(name):
         return jsonify({"error": "not found"}), 404
-
-    with open(path) as fh:
-        existing = json.load(fh)
-
-    new_list = [e for e in existing if e["name"].lower() != name.lower()]
-    if len(new_list) == len(existing):
-        return jsonify({"error": "not found"}), 404
-
-    with open(path, "w") as fh:
-        json.dump(new_list, fh, indent=2)
-
-    import flagger
-    flagger._trusted = None
 
     state.add_log(f"Removed trusted publisher: {name}")
     return jsonify({"ok": True})
@@ -530,11 +432,24 @@ def _setup_logging():
 
 if __name__ == "__main__":
     _setup_logging()
-    _load_persisted_flags()
+
+    # Initialise SQLite database and migrate any old JSON files
+    _db.init_db()
+    _db.migrate_from_json()
+
+    # Restore settings from DB
+    saved_interval = _db.get_setting_int("poll_interval", config.POLL_INTERVAL_SECONDS)
+    state.poll_interval = saved_interval
+    config.POLL_INTERVAL_SECONDS = saved_interval
+    saved_workers = _db.get_setting_int("num_workers", config.NUM_WORKERS)
+    config.NUM_WORKERS = saved_workers
+    pipeline._num_workers = saved_workers
+
     _start_monitor()
     port = int(os.environ.get("PORT", 8050))
     print("\n  ╔══════════════════════════════════════════════════╗")
     print(f"  ║  PyPI ↔ GitHub Monitor – Web Dashboard           ║")
     print(f"  ║  http://127.0.0.1:{port:<38}║")
+    print(f"  ║  Database: monitor.db                             ║")
     print("  ╚══════════════════════════════════════════════════╝\n")
     app.run(host="127.0.0.1", port=port, debug=False)

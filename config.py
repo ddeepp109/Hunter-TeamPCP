@@ -16,13 +16,21 @@ GITHUB_API = "https://api.github.com"
 # ── Polling ─────────────────────────────────────────────────────────────────
 POLL_INTERVAL_SECONDS = 120          # how often to re-fetch the RSS feed
 GRACE_PERIOD_HOURS = 48              # delay before flagging (avoid false positives)
+NUM_WORKERS = 4                      # concurrent analysis workers
 
 # ── Rate-limiting (PyPI + GitHub) ───────────────────────────────────────────
-REQUEST_DELAY_SECONDS = 1.0          # polite delay between HTTP calls
+REQUEST_DELAY_SECONDS = 0.2          # polite delay between HTTP calls (lower for concurrency)
 
 # ── Logging / Output ───────────────────────────────────────────────────────
 LOG_FILE = "monitor.log"
-FLAGGED_OUTPUT_FILE = "flagged_packages.json"
+FLAGGED_OUTPUT_FILE = "flagged_packages.json"   # legacy, kept for migration
+
+# ── Database ────────────────────────────────────────────────────────────────
+DB_FILE = "monitor.db"                          # single SQLite database
+
+# ── State persistence (legacy JSON – migrated to DB on first run) ───────────
+SCAN_STATE_FILE = "scan_state.json"
+FEED_SEEN_FILE = "feed_seen.json"
 
 # ── Trusted publishers ──────────────────────────────────────────────────────
-TRUSTED_PUBLISHERS_FILE = "trusted_publishers.json"
+TRUSTED_PUBLISHERS_FILE = "trusted_publishers.json"  # legacy, migrated to DB

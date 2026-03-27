@@ -30,6 +30,7 @@ from flagger import (
 )
 from github_checker import verify_version
 from github_resolver import fetch_pypi_metadata, find_github_repo
+from pypi_analyzer import analyse_risks
 from pypi_feed import FeedPoller, PackageUpdate
 
 __version__ = "1.0.0"
@@ -76,6 +77,11 @@ def analyse_package(update: PackageUpdate) -> FlaggedPackage | None:
     else:
         logger.info("  No GitHub repo found in metadata")
 
+    # Run additional risk signal analysis (provenance, velocity, downloads, yanked)
+    risk_signals = analyse_risks(update.name, update.version)
+    if risk_signals.active_signals():
+        logger.info("  Risk signals: %s", ", ".join(risk_signals.active_signals()))
+
     flag = classify(
         package_name=update.name,
         version=update.version,
@@ -84,6 +90,7 @@ def analyse_package(update: PackageUpdate) -> FlaggedPackage | None:
         github_repo_found=gh is not None,
         verification=verification,
         pub_date=update.pub_date,
+        risk_signals=risk_signals,
     )
 
     return flag

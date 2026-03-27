@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+{% set active = "queue" %}
+{% block title %}Queue – PyPI Monitor{% endblock %}
+
+{% block content %}
+<h1>⚡ Processing Queue</h1>
+
+<!-- Progress & stats cards -->
+<div class="cards" id="q-cards">
+  <div class="card">
+    <div class="label">Batch Progress</div>
+    <div class="value green" id="q-progress">–</div>
+    <div class="progress-bar" style="margin-top:8px;">
+      <div class="fill green" id="q-bar" style="width:0%;"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="label">Processing Rate</div>
+    <div class="value" style="color:var(--cyan);" id="q-rate">–</div>
+  </div>
+  <div class="card">
+    <div class="label">Workers</div>
+    <div class="value" style="color:var(--accent);" id="q-workers">–</div>
+    <div id="worker-dots" style="margin-top:6px;"></div>
+  </div>
+  <div class="card">
+    <div class="label">Queued</div>
+    <div class="value" style="color:var(--text2);" id="q-queued">0</div>
+  </div>
+  <div class="card">
+    <div class="label">Active</div>
+    <div class="value" style="color:var(--accent);" id="q-active">0</div>
+  </div>
+  <div class="card">
+    <div class="label">Cache Hit Rate</div>
+    <div class="value" style="color:var(--purple);" id="q-cache">–</div>
+  </div>
+</div>
+
+<!-- Currently Processing -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>🔄 Currently Processing</h2></div>
+  <table>
+    <thead><tr><th>Worker</th><th>Package</th><th>Version</th><th>Started</th></tr></thead>
+    <tbody id="active-body">
+      <tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No active workers.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Waiting in Queue -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>⏳ Waiting in Queue</h2></div>
+  <table>
+    <thead><tr><th>Priority</th><th>Package</th><th>Version</th><th>Retries</th></tr></thead>
+    <tbody id="queued-body">
+      <tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">Queue is empty.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Recently Completed -->
+<div class="tbl-wrap">
+  <div class="tbl-head"><h2>✅ Recently Completed</h2></div>
+  <table>
+    <thead><tr><th>Status</th><th>Package</th><th>Version</th><th>Worker</th><th>Result</th><th>Finished</th></tr></thead>
+    <tbody id="done-body">
+      <tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">No completed items yet.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Cache Stats -->
+<div class="tbl-wrap" style="margin-top:28px;">
+  <div class="tbl-head"><h2>📊 Cache Performance</h2></div>
+  <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;" id="cache-grid">
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+
+async function refreshQueue(){
+  const q = await api('/api/queue');
+  const s = await api('/api/status');
+
+  // Progress
+  document.getElementById('q-progress').textContent = q.batch_total>0 ? `${q.batch_done}/${q.batch_total}` : '–';
+  document.getElementById('q-bar').style.width = q.batch_progress + '%';
+  document.getElementById('q-rate').textContent = q.processing_rate>0 ? q.processing_rate + ' pkg/min' : '–';
+  document.getElementById('q-workers').textContent = q.num_workers;
+  document.getElementById('q-queued').textContent = q.queued.length;
+  document.getElementById('q-active').textContent = q.active.length;
+
+  // Worker dots
+  const workerDots = document.getElementById('worker-dots');
+  let dots = '';
+  for(let i=0; i<q.num_workers; i++){
+    const busy = q.active.some(a => a.worker_id === i);
+    dots += `<span class="worker-dot ${busy?'busy':'idle'}" title="Worker ${i}"></span>`;
+  }
+  workerDots.innerHTML = dots;
+
+  // Active table
+  const atb = document.getElementById('active-body');
+  if(q.active.length){
+    atb.innerHTML = q.active.map(a => `<tr>
+      <td><span class="q-badge processing">W${a.worker_id||0}</span></td>
+      <td><strong>${esc(a.name)}</strong></td>
+      <td>${esc(a.version)}</td>
+      <td class="text-muted">${esc((a.started_at||'').slice(11,19))}</td>
+    </tr>`).join('');
+  } else {
+    atb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No active workers.</td></tr>';
+  }
+
+  // Queued table
+  const qtb = document.getElementById('queued-body');
+  if(q.queued.length){
+    qtb.innerHTML = q.queued.slice(0,20).map(item => `<tr>
+      <td><span class="q-badge queued">#${item.priority}</span></td>
+      <td><strong>${esc(item.name)}</strong></td>
+      <td>${esc(item.version)}</td>
+      <td>${item.retries>0?`<span style="color:var(--orange);">↻${item.retries}</span>`:'—'}</td>
+    </tr>`).join('');
+  } else {
+    qtb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">Queue is empty.</td></tr>';
+  }
+
+  // Done table
+  const dtb = document.getElementById('done-body');
+  if(q.done.length){
+    dtb.innerHTML = q.done.slice(0,30).map(item => {
+      const statusClass = item.status;
+      const statusLabel = item.status === 'done' ? (item.flagged ? '🚩 FLAGGED' : '✓ CLEAN') :
+                          item.status === 'failed' ? '✗ FAILED' : item.status.toUpperCase();
+      const statusColor = item.flagged ? 'var(--red)' : item.status==='failed' ? 'var(--red)' : 'var(--green)';
+      return `<tr>
+        <td><span class="q-badge ${statusClass}">${esc(item.status)}</span></td>
+        <td><strong>${esc(item.name)}</strong></td>
+        <td>${esc(item.version)}</td>
+        <td class="text-muted">W${item.worker_id||0}</td>
+        <td style="color:${statusColor};">${statusLabel}${item.error?` <span class="text-muted">(${esc(item.error.slice(0,50))})</span>`:''}</td>
+        <td class="text-muted">${esc((item.finished_at||'').slice(11,19))}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    dtb.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">No completed items yet.</td></tr>';
+  }
+
+  // Cache stats
+  const cg = document.getElementById('cache-grid');
+  const cs = q.cache_stats || {};
+  cg.innerHTML = Object.entries(cs).map(([name, stats]) => `
+    <div style="padding:12px;background:var(--bg);border-radius:8px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px;text-transform:capitalize;">${esc(name.replace('_',' '))}</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.8;">
+        Entries: <strong style="color:var(--text);">${stats.size}</strong><br>
+        Hits: <strong style="color:var(--green);">${stats.hits}</strong> &nbsp;
+        Misses: <strong style="color:var(--red);">${stats.misses}</strong><br>
+        Hit rate: <strong style="color:var(--purple);">${stats.hit_rate}</strong>
+      </div>
+    </div>
+  `).join('');
+
+  // Overall cache hit rate for the KPI card
+  let totalHits=0, totalMisses=0;
+  Object.values(cs).forEach(s => { totalHits+=s.hits; totalMisses+=s.misses; });
+  const overall = totalHits+totalMisses > 0 ? Math.round(totalHits/(totalHits+totalMisses)*100) + '%' : '–';
+  document.getElementById('q-cache').textContent = overall;
+}
+
+refreshQueue();
+setInterval(refreshQueue, 2000);
+</script>
+{% endblock %}

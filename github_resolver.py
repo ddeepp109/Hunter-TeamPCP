@@ -49,7 +49,11 @@ class PyPIMetadata:
 
 
 def fetch_pypi_metadata(package: str) -> Optional[PyPIMetadata]:
-    """Fetch metadata from the PyPI JSON API (no download)."""
+    """Fetch metadata from the PyPI JSON API (no download).
+
+    Also stores the full JSON response in the returned object's
+    ``_raw_json`` attribute for downstream reuse (e.g. pypi_analyzer).
+    """
     url = config.PYPI_JSON_API.format(package=package)
     try:
         time.sleep(config.REQUEST_DELAY_SECONDS)
@@ -62,8 +66,9 @@ def fetch_pypi_metadata(package: str) -> Optional[PyPIMetadata]:
         logger.error("PyPI API error for %s: %s", package, exc)
         return None
 
-    info = resp.json().get("info", {})
-    return PyPIMetadata(
+    data = resp.json()
+    info = data.get("info", {})
+    meta = PyPIMetadata(
         name=info.get("name", package),
         version=info.get("version", ""),
         summary=info.get("summary", ""),
@@ -76,6 +81,9 @@ def fetch_pypi_metadata(package: str) -> Optional[PyPIMetadata]:
         author_email=info.get("author_email", "") or "",
         package_url=info.get("package_url", "") or "",
     )
+    # Attach raw JSON for downstream reuse (velocity, yanked checks)
+    meta._raw_json = data  # type: ignore[attr-defined]
+    return meta
 
 
 def _extract_gh_owner_repo(text: str) -> Optional[Tuple[str, str]]:

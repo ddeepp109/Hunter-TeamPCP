@@ -88,6 +88,33 @@ input:focus, select:focus { border-color:var(--accent); }
 .empty-state { text-align:center; padding:48px 20px; color:var(--text2); }
 .empty-state .icon { font-size:48px; margin-bottom:12px; }
 
+/* ── Risk signal chips ───────────────────── */
+.risk-chip { display:inline-block; padding:2px 7px; border-radius:3px; font-size:10px; font-weight:600; letter-spacing:.3px; margin:1px 2px; }
+.risk-chip.rapid-publish { background:rgba(210,153,34,.15); color:var(--orange); }
+.risk-chip.high-value { background:rgba(188,140,255,.15); color:var(--purple); }
+.risk-chip.yanked { background:rgba(248,81,73,.18); color:var(--red); }
+
+/* ── Progress bar ────────────────────────── */
+.progress-bar { height:8px; background:var(--bg3); border-radius:4px; overflow:hidden; }
+.progress-bar .fill { height:100%; border-radius:4px; transition:width .4s ease; }
+.progress-bar .fill.green { background:var(--green); }
+.progress-bar .fill.cyan { background:var(--cyan); }
+.progress-bar .fill.orange { background:var(--orange); }
+
+/* ── Queue status badges ─────────────────── */
+.q-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.q-badge.queued { background:rgba(139,148,158,.15); color:var(--text2); }
+.q-badge.processing { background:rgba(88,166,255,.15); color:var(--accent); animation:pulse 1.5s infinite; }
+.q-badge.done { background:rgba(63,185,80,.15); color:var(--green); }
+.q-badge.failed { background:rgba(248,81,73,.15); color:var(--red); }
+.q-badge.skipped { background:rgba(139,148,158,.1); color:var(--text2); }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.6;} }
+
+/* ── Worker indicator ────────────────────── */
+.worker-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+.worker-dot.idle { background:var(--text2); }
+.worker-dot.busy { background:var(--green); animation:pulse 1s infinite; }
+
 @media(max-width:800px){
   .sidebar{width:60px;} .sidebar .logo span,.sidebar nav a span{display:none;} .main{margin-left:60px;padding:16px;}
 }
@@ -102,6 +129,7 @@ input:focus, select:focus { border-color:var(--accent); }
   </div>
   <nav>
     <a href="/" class="{% if active == 'dashboard' %}active{% endif %}"><span class="icon">📊</span> <span>Dashboard</span></a>
+    <a href="/queue" class="{% if active == 'queue' %}active{% endif %}"><span class="icon">⚡</span> <span>Queue</span></a>
     <a href="/flagged" class="{% if active == 'flagged' %}active{% endif %}"><span class="icon">🚩</span> <span>Flagged</span></a>
     <a href="/logs" class="{% if active == 'logs' %}active{% endif %}"><span class="icon">📜</span> <span>Logs</span></a>
     <a href="/settings" class="{% if active == 'settings' %}active{% endif %}"><span class="icon">⚙️</span> <span>Settings</span></a>

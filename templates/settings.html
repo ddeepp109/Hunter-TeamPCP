@@ -16,6 +16,21 @@
   </div>
 </div>
 
+<!-- Worker Count -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>Concurrent Workers</h2></div>
+  <div style="padding:16px;display:flex;align-items:center;gap:12px;">
+    <input type="number" id="workers-input" min="1" max="16" step="1" value="4" style="width:100px;">
+    <span class="text-muted">threads (1–16)</span>
+    <button class="btn sm green" onclick="saveWorkers()">Save</button>
+    <span id="workers-msg" class="text-muted"></span>
+  </div>
+  <div style="padding:0 16px 16px;font-size:12px;color:var(--text2);">
+    More workers = faster batch processing, but more API calls in parallel.
+    With a GitHub token, 4–8 workers is optimal.
+  </div>
+</div>
+
 <!-- Trusted Publishers -->
 <div class="tbl-wrap">
   <div class="tbl-head">
@@ -39,6 +54,7 @@
 async function loadSettings(){
   const s=await api('/api/status');
   document.getElementById('interval-input').value=s.poll_interval;
+  document.getElementById('workers-input').value=s.num_workers||4;
   loadTrusted();
 }
 
@@ -47,6 +63,13 @@ async function saveInterval(){
   const r=await api('/api/settings/interval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({interval:val})});
   document.getElementById('interval-msg').textContent=r.error||('Saved: '+r.interval+'s');
   setTimeout(()=>document.getElementById('interval-msg').textContent='',3000);
+}
+
+async function saveWorkers(){
+  const val=parseInt(document.getElementById('workers-input').value,10);
+  const r=await api('/api/settings/workers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workers:val})});
+  document.getElementById('workers-msg').textContent=r.error||('Saved: '+r.workers+' workers');
+  setTimeout(()=>document.getElementById('workers-msg').textContent='',3000);
 }
 
 async function loadTrusted(){
