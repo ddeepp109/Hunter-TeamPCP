@@ -63,8 +63,8 @@ class MonitorState:
         d = asdict(flag)
         _db.upsert_flagged(d)
 
-    def add_scan(self, name: str, version: str, flagged: bool):
-        _db.add_scan(name, version, flagged)
+    def add_scan(self, name: str, version: str, flagged: bool, **kwargs):
+        _db.add_scan(name, version, flagged, **kwargs)
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -102,7 +102,7 @@ state = MonitorState()
 pipeline = Pipeline(
     num_workers=config.NUM_WORKERS,
     on_flagged=lambda f: (state.add_flagged(f), save_flagged([f])),
-    on_scan=lambda n, v, f: state.add_scan(n, v, f),
+    on_scan=lambda n, v, f, **kw: state.add_scan(n, v, f, **kw),
     on_log=lambda m: state.add_log(m),
     on_status=lambda w: _update_queue_snapshot(),
 )

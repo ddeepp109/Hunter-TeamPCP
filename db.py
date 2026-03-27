@@ -110,7 +110,11 @@ def init_db():
             name      TEXT NOT NULL,
             version   TEXT NOT NULL,
             flagged   INTEGER NOT NULL DEFAULT 0,
-            scanned_at TEXT NOT NULL
+            scanned_at TEXT NOT NULL,
+            github_owner  TEXT DEFAULT '',
+            github_repo   TEXT DEFAULT '',
+            github_releases TEXT DEFAULT '',
+            pypi_link TEXT DEFAULT ''
         );
 
         CREATE INDEX IF NOT EXISTS idx_scans_time ON scans(scanned_at DESC);
@@ -137,6 +141,20 @@ def init_db():
             message    TEXT NOT NULL
         );
         """)
+
+    # Migrate: add columns to scans if they don't exist yet (existing DBs)
+    try:
+        with _cursor() as cur:
+            cols = {r[1] for r in cur.execute("PRAGMA table_info(scans)").fetchall()}
+            for col, default in [
+                ("github_owner", "''"), ("github_repo", "''"),
+                ("github_releases", "''"), ("pypi_link", "''"),
+            ]:
+                if col not in cols:
+                    cur.execute(f"ALTER TABLE scans ADD COLUMN {col} TEXT DEFAULT {default}")
+    except Exception:
+        pass
+
     logger.info("Database initialised at %s", DB_PATH)
 
 
@@ -313,12 +331,19 @@ def get_flagged_for_reverify(min_age_seconds: int = 3600) -> List[dict]:
 
 # ── Scans ───────────────────────────────────────────────────────────────────
 
-def add_scan(name: str, version: str, flagged: bool) -> None:
+def add_scan(name: str, version: str, flagged: bool, *,
+             github_owner: str = "", github_repo: str = "",
+             github_releases: Optional[List[str]] = None,
+             pypi_link: str = "") -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    gh_rels = json.dumps(github_releases or [])
     with _cursor() as cur:
         cur.execute(
-            "INSERT INTO scans (name, version, flagged, scanned_at) VALUES (?,?,?,?)",
-            (name, version, int(flagged), ts),
+            "INSERT INTO scans (name, version, flagged, scanned_at, "
+            "github_owner, github_repo, github_releases, pypi_link) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (name, version, int(flagged), ts,
+             github_owner or "", github_repo or "", gh_rels, pypi_link or ""),
         )
         # Keep only last 500 entries
         cur.execute("""
@@ -331,16 +356,29 @@ def add_scan(name: str, version: str, flagged: bool) -> None:
 def get_recent_scans(limit: int = 200) -> List[dict]:
     with _cursor() as cur:
         cur.execute(
-            "SELECT name, version, flagged, scanned_at as time FROM scans ORDER BY id DESC LIMIT ?",
+            "SELECT name, version, flagged, scanned_at as time, "
+            "github_owner, github_repo, github_releases, pypi_link "
+            "FROM scans ORDER BY id DESC LIMIT ?",
             (limit,),
         )
         rows = []
         for r in cur.fetchall():
+            gh_rels = []
+            try:
+                raw = r["github_releases"]
+                if raw:
+                    gh_rels = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
             rows.append({
                 "name": r["name"],
                 "version": r["version"],
                 "flagged": bool(r["flagged"]),
                 "time": r["time"],
+                "github_owner": r["github_owner"] or "",
+                "github_repo": r["github_repo"] or "",
+                "github_releases": gh_rels,
+                "pypi_link": r["pypi_link"] or "",
             })
         return rows
 

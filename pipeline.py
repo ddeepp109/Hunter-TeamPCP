@@ -215,7 +215,7 @@ class Pipeline:
         self,
         num_workers: int = 4,
         on_flagged: Optional[Callable[[FlaggedPackage], None]] = None,
-        on_scan: Optional[Callable[[str, str, bool], None]] = None,
+        on_scan: Optional[Callable] = None,
         on_log: Optional[Callable[[str], None]] = None,
         on_status: Optional[Callable[[WorkItem], None]] = None,
     ):
@@ -345,13 +345,26 @@ class Pipeline:
 
         update = item.update
         try:
-            flag = self._analyse_package(update)
+            flag, verification = self._analyse_package(update)
             item.status = Status.DONE
             item.result = flag
             item.finished_at = datetime.now(timezone.utc).isoformat()
 
             was_flagged = flag is not None
-            self._on_scan(update.name, update.version, was_flagged)
+            # Extract GitHub info for scan record
+            gh_owner = ""
+            gh_repo = ""
+            gh_releases: list = []
+            if verification:
+                gh_owner = getattr(verification, "owner", "") or ""
+                gh_repo = getattr(verification, "repo", "") or ""
+                gh_releases = getattr(verification, "github_releases", []) or []
+            self._on_scan(
+                update.name, update.version, was_flagged,
+                github_owner=gh_owner, github_repo=gh_repo,
+                github_releases=gh_releases[:10],
+                pypi_link=update.link,
+            )
 
             if flag:
                 self._on_flagged(flag)
@@ -389,12 +402,15 @@ class Pipeline:
             self._batch_done += 1
             self._on_status(item)
 
-    def _analyse_package(self, update: PackageUpdate) -> Optional[FlaggedPackage]:
-        """Full analysis pipeline for one package (thread-safe)."""
+    def _analyse_package(self, update: PackageUpdate):
+        """Full analysis pipeline for one package (thread-safe).
+
+        Returns (flag_or_None, verification_or_None).
+        """
         # 1. Fetch PyPI metadata (cached)
         meta = cached_fetch_pypi_metadata(update.name)
         if meta is None:
-            return None
+            return None, None
 
         # 2. Resolve GitHub repo
         gh = find_github_repo(meta)
@@ -426,7 +442,7 @@ class Pipeline:
             pub_date=update.pub_date,
             risk_signals=risk_signals,
         )
-        return flag
+        return flag, verification
 
     # ── Queue status for UI ──────────────────────────────────────────────────
 

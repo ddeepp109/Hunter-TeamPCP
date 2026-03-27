@@ -47,8 +47,8 @@
 <div class="tbl-wrap mb">
   <div class="tbl-head"><h2>Recent Scans</h2></div>
   <table>
-    <thead><tr><th>Package</th><th>Version</th><th>Result</th><th>Time</th></tr></thead>
-    <tbody id="recent-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+    <thead><tr><th>Package</th><th>Version</th><th>GitHub Repo</th><th>GitHub Releases</th><th>Result</th><th>Time</th></tr></thead>
+    <tbody id="recent-body"><tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -107,13 +107,21 @@ async function refreshDash(){
 async function refreshRecent(){
   const data=await api('/api/recent');
   const tb=document.getElementById('recent-body');
-  if(!data.length){tb.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">No scans yet.</td></tr>';return;}
-  tb.innerHTML=data.slice(0,20).map(r=>`<tr>
-    <td><strong>${esc(r.name)}</strong></td>
-    <td>${esc(r.version)}</td>
+  if(!data.length){tb.innerHTML='<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px;">No scans yet.</td></tr>';return;}
+  tb.innerHTML=data.slice(0,20).map(r=>{
+    const pypiLink=r.pypi_link||`https://pypi.org/project/${encodeURIComponent(r.name)}/${encodeURIComponent(r.version)}/`;
+    const ghOwner=r.github_owner||'';
+    const ghRepo=r.github_repo||'';
+    const ghLink=(ghOwner&&ghRepo)?`<a href="https://github.com/${esc(ghOwner)}/${esc(ghRepo)}" target="_blank" style="color:var(--cyan);">${esc(ghOwner)}/${esc(ghRepo)}</a>`:'<span class="text-muted">–</span>';
+    const ghRels=(r.github_releases||[]).slice(0,3).map(v=>`<code style="color:var(--cyan);font-size:12px;">${esc(v)}</code>`).join(', ')||'<span class="text-muted">–</span>';
+    return `<tr>
+    <td><a href="${esc(pypiLink)}" target="_blank" style="color:var(--green);">${esc(r.name)}</a></td>
+    <td><code style="color:var(--green);">${esc(r.version)}</code></td>
+    <td>${ghLink}</td>
+    <td>${ghRels}</td>
     <td>${r.flagged?'<span class="badge CRITICAL">FLAGGED</span>':'<span class="badge clean">CLEAN</span>'}</td>
     <td class="text-muted">${esc(r.time)}</td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 }
 
 async function refreshFlagged(){
