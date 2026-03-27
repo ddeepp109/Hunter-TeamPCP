@@ -286,33 +286,14 @@ def classify(
             return Severity.HIGH.value
         return base.value
 
-    # Case 2a: API errors made the check inconclusive – don't flag as
-    # CRITICAL / HIGH because we simply couldn't reach GitHub.
+    # Case 2a: API errors made the check inconclusive – skip entirely.
+    # Don't flag; the package will be re-checked on the next scan cycle.
     if getattr(verification, "api_error", False):
-        # If we still found a tag/release despite some errors, it's clean.
-        if verification.has_release or verification.has_tag:
-            return None
-        return FlaggedPackage(
-            name=package_name,
-            version=version,
-            severity=Severity.LOW.value,
-            reason=(
-                f"GitHub verification inconclusive (API error/rate-limit) for "
-                f"{verification.owner}/{verification.repo}.  Will retry next scan."
-            ),
-            pypi_link=pypi_link,
-            github_owner=verification.owner,
-            github_repo=verification.repo,
-            author=meta.author if meta else "",
-            author_email=meta.author_email if meta else "",
-            summary=meta.summary if meta else "",
-            flagged_at=flagged_at,
-            verification=asdict(verification),
-            pypi_version=version,
-            github_releases=getattr(verification, "github_releases", [])[:10],
-            github_tags=getattr(verification, "github_tags", [])[:10],
-            **_make_risk_fields(),
+        logger.debug(
+            "%s %s – GitHub API error for %s/%s, skipping (will retry next scan)",
+            package_name, version, verification.owner, verification.repo,
         )
+        return None
 
     # Case 2b: GitHub repo referenced but doesn't exist / is private
     # Can't verify releases if repo is gone – skip, don't flag.

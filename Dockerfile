@@ -15,14 +15,14 @@ COPY config.py db.py flagger.py github_checker.py github_resolver.py \
      monitor.py pipeline.py pypi_analyzer.py pypi_feed.py webapp.py ./
 COPY templates/ templates/
 
-# SQLite DB will live on the persistent Fly volume mounted at /data
-ENV DB_PATH=/data/monitor.db
+# SQLite DB — /app/data works on both Railway and Fly.io
+# Override with DB_PATH env var or Fly volume mount as needed
+ENV DB_PATH=/app/data/monitor.db
 
-# Fly.io sets PORT env var (default 8080)
+# Railway sets PORT dynamically; default 8080 for Fly.io
 ENV PORT=8080
 
 EXPOSE 8080
 
-# Use gunicorn with app factory for production
-# --preload ensures create_app() runs once (init DB, start monitor thread)
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "120", "--preload", "webapp:create_app()"]
+# Use shell form so $PORT is expanded at runtime (Railway compatibility)
+CMD gunicorn --bind "0.0.0.0:$PORT" --workers 1 --threads 4 --timeout 120 --preload "webapp:create_app()"
