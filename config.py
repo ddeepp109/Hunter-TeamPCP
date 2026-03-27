@@ -1,0 +1,28 @@
+"""
+Configuration for the PyPI → GitHub release monitor.
+"""
+import os
+
+# ── Feed ────────────────────────────────────────────────────────────────────
+PYPI_RSS_URL = "https://pypi.org/rss/updates.xml"
+PYPI_JSON_API = "https://pypi.org/pypi/{package}/json"
+PYPI_VERSION_API = "https://pypi.org/pypi/{package}/{version}/json"
+
+# ── GitHub ──────────────────────────────────────────────────────────────────
+# Set GITHUB_TOKEN env var for higher rate limits (5 000 req/h vs 60 req/h).
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_API = "https://api.github.com"
+
+# ── Polling ─────────────────────────────────────────────────────────────────
+POLL_INTERVAL_SECONDS = 120          # how often to re-fetch the RSS feed
+GRACE_PERIOD_HOURS = 48              # delay before flagging (avoid false positives)
+
+# ── Rate-limiting (PyPI + GitHub) ───────────────────────────────────────────
+REQUEST_DELAY_SECONDS = 1.0          # polite delay between HTTP calls
+
+# ── Logging / Output ───────────────────────────────────────────────────────
+LOG_FILE = "monitor.log"
+FLAGGED_OUTPUT_FILE = "flagged_packages.json"
+
+# ── Trusted publishers ──────────────────────────────────────────────────────
+TRUSTED_PUBLISHERS_FILE = "trusted_publishers.json"

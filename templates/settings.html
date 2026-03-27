@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+{% set active = "settings" %}
+{% block title %}Settings – PyPI Monitor{% endblock %}
+
+{% block content %}
+<h1>⚙️ Settings</h1>
+
+<!-- Poll Interval -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>Polling Interval</h2></div>
+  <div style="padding:16px;display:flex;align-items:center;gap:12px;">
+    <input type="number" id="interval-input" min="10" step="10" value="120" style="width:100px;">
+    <span class="text-muted">seconds</span>
+    <button class="btn sm green" onclick="saveInterval()">Save</button>
+    <span id="interval-msg" class="text-muted"></span>
+  </div>
+</div>
+
+<!-- Trusted Publishers -->
+<div class="tbl-wrap">
+  <div class="tbl-head">
+    <h2>Trusted Publishers</h2>
+    <span class="text-muted">Packages on this list are always skipped during analysis.</span>
+  </div>
+  <div style="padding:16px;display:flex;gap:10px;border-bottom:1px solid var(--border);">
+    <input type="text" id="tp-name" placeholder="Package name" style="width:200px;">
+    <input type="text" id="tp-note" placeholder="Note (optional)" style="width:280px;">
+    <button class="btn sm green" onclick="addTrusted()">+ Add</button>
+  </div>
+  <table>
+    <thead><tr><th>Package</th><th>Note</th><th style="width:80px;"></th></tr></thead>
+    <tbody id="tp-body"><tr><td colspan="3" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings(){
+  const s=await api('/api/status');
+  document.getElementById('interval-input').value=s.poll_interval;
+  loadTrusted();
+}
+
+async function saveInterval(){
+  const val=parseInt(document.getElementById('interval-input').value,10);
+  const r=await api('/api/settings/interval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({interval:val})});
+  document.getElementById('interval-msg').textContent=r.error||('Saved: '+r.interval+'s');
+  setTimeout(()=>document.getElementById('interval-msg').textContent='',3000);
+}
+
+async function loadTrusted(){
+  const data=await api('/api/trusted');
+  const tb=document.getElementById('tp-body');
+  if(!data.length){tb.innerHTML='<tr><td colspan="3" class="text-muted" style="text-align:center;padding:20px;">No trusted publishers.</td></tr>';return;}
+  tb.innerHTML=data.map(t=>`<tr>
+    <td><strong>${esc(t.name)}</strong></td>
+    <td class="text-muted">${esc(t.note||'')}</td>
+    <td><button class="btn sm red" onclick="removeTrusted('${esc(t.name)}')">✕</button></td>
+  </tr>`).join('');
+}
+
+async function addTrusted(){
+  const name=document.getElementById('tp-name').value.trim();
+  const note=document.getElementById('tp-note').value.trim();
+  if(!name)return;
+  await api('/api/trusted',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,note})});
+  document.getElementById('tp-name').value='';
+  document.getElementById('tp-note').value='';
+  loadTrusted();
+}
+
+async function removeTrusted(name){
+  await api('/api/trusted/'+encodeURIComponent(name),{method:'DELETE'});
+  loadTrusted();
+}
+
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+
+loadSettings();
+</script>
+{% endblock %}

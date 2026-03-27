@@ -1,0 +1,114 @@
+{% extends "layout.html" %}
+{% set active = "dashboard" %}
+{% block title %}Dashboard – PyPI Monitor{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<!-- KPI Cards -->
+<div class="cards" id="kpi-cards">
+  <div class="card"><div class="label">Total Scanned</div><div class="value green" id="kpi-scanned">–</div></div>
+  <div class="card"><div class="label">Total Flagged</div><div class="value critical" id="kpi-flagged">–</div></div>
+  <div class="card"><div class="label">Critical</div><div class="value critical" id="kpi-critical">–</div></div>
+  <div class="card"><div class="label">High</div><div class="value high" id="kpi-high">–</div></div>
+  <div class="card"><div class="label">Medium</div><div class="value medium" id="kpi-medium">–</div></div>
+  <div class="card"><div class="label">Low</div><div class="value low" id="kpi-low">–</div></div>
+</div>
+
+<!-- Monitor controls -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head">
+    <h2>Monitor Control</h2>
+    <div class="flex">
+      <button class="btn green" onclick="startMon()">▶ Start</button>
+      <button class="btn red" onclick="stopMon()">■ Stop</button>
+    </div>
+  </div>
+  <div style="padding:14px 16px;display:flex;gap:32px;flex-wrap:wrap;font-size:13px;">
+    <div><span class="text-muted">Status:</span> <strong id="ctl-status">–</strong></div>
+    <div><span class="text-muted">Started:</span> <span id="ctl-started">–</span></div>
+    <div><span class="text-muted">Last Poll:</span> <span id="ctl-lastpoll">–</span></div>
+    <div><span class="text-muted">Next Poll:</span> <span id="ctl-nextpoll">–</span></div>
+    <div><span class="text-muted">Interval:</span> <span id="ctl-interval">–</span>s</div>
+  </div>
+</div>
+
+<!-- Recent scans -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>Recent Scans</h2></div>
+  <table>
+    <thead><tr><th>Package</th><th>Version</th><th>Result</th><th>Time</th></tr></thead>
+    <tbody id="recent-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Latest flagged -->
+<div class="tbl-wrap">
+  <div class="tbl-head"><h2>Latest Flagged Packages</h2><a href="/flagged" class="btn sm">View All →</a></div>
+  <table>
+    <thead><tr><th>Severity</th><th>Package</th><th>GitHub Repo</th><th>PyPI Version</th><th>GitHub Releases</th><th>Reason</th><th>Time</th></tr></thead>
+    <tbody id="flagged-body"><tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function refreshDash(){
+  const s=await api('/api/status');
+  document.getElementById('kpi-scanned').textContent=s.total_scanned;
+  document.getElementById('kpi-flagged').textContent=s.total_flagged;
+  document.getElementById('kpi-critical').textContent=s.severity_counts.CRITICAL||0;
+  document.getElementById('kpi-high').textContent=s.severity_counts.HIGH||0;
+  document.getElementById('kpi-medium').textContent=s.severity_counts.MEDIUM||0;
+  document.getElementById('kpi-low').textContent=s.severity_counts.LOW||0;
+  document.getElementById('ctl-status').textContent=s.running?'Running':'Stopped';
+  document.getElementById('ctl-status').style.color=s.running?'var(--green)':'var(--red)';
+  document.getElementById('ctl-started').textContent=s.started_at||'–';
+  document.getElementById('ctl-lastpoll').textContent=s.last_poll||'–';
+  document.getElementById('ctl-nextpoll').textContent=s.next_poll||'–';
+  document.getElementById('ctl-interval').textContent=s.poll_interval;
+}
+
+async function refreshRecent(){
+  const data=await api('/api/recent');
+  const tb=document.getElementById('recent-body');
+  if(!data.length){tb.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">No scans yet.</td></tr>';return;}
+  tb.innerHTML=data.slice(0,20).map(r=>`<tr>
+    <td><strong>${esc(r.name)}</strong></td>
+    <td>${esc(r.version)}</td>
+    <td>${r.flagged?'<span class="badge CRITICAL">FLAGGED</span>':'<span class="badge clean">CLEAN</span>'}</td>
+    <td class="text-muted">${esc(r.time)}</td>
+  </tr>`).join('');
+}
+
+async function refreshFlagged(){
+  const data=await api('/api/flagged');
+  const tb=document.getElementById('flagged-body');
+  if(!data.length){tb.innerHTML='<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px;">No flagged packages yet.</td></tr>';return;}
+  tb.innerHTML=data.slice(0,10).map(f=>{
+    const ghRels=(f.github_releases||[]).slice(0,3).map(esc).join(', ')||'None';
+    const ghOwner=f.github_owner||'';
+    const ghRepo=f.github_repo||'';
+    const ghLink=(ghOwner&&ghRepo)?`<a href="https://github.com/${esc(ghOwner)}/${esc(ghRepo)}" target="_blank" style="color:var(--cyan);">${esc(ghOwner)}/${esc(ghRepo)}</a>`:'<span class="text-muted">–</span>';
+    return `<tr>
+    <td><span class="badge ${esc(f.severity)}">${esc(f.severity)}</span></td>
+    <td><a href="${esc(f.pypi_link)}" target="_blank">${esc(f.name)}</a></td>
+    <td>${ghLink}</td>
+    <td><code style="color:var(--green);">${esc(f.pypi_version||f.version)}</code></td>
+    <td><code>${esc(ghRels)}</code></td>
+    <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.reason)}</td>
+    <td class="text-muted">${esc(f.flagged_at||'')}</td>
+  </tr>`;}).join('');
+}
+
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+
+async function startMon(){await api('/api/monitor/start',{method:'POST'});refreshDash();}
+async function stopMon(){await api('/api/monitor/stop',{method:'POST'});refreshDash();}
+
+function tick(){refreshDash();refreshRecent();refreshFlagged();}
+tick();
+setInterval(tick,4000);
+</script>
+{% endblock %}
