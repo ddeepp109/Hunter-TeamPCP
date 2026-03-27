@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.environ.get("DB_PATH",
          os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitor.db"))
 
+# Ensure the DB directory exists (Railway/Docker may not pre-create it)
+os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+
 # One connection per thread (SQLite requirement)
 _local = threading.local()
 
