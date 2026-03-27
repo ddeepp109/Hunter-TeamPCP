@@ -115,41 +115,61 @@ def _update_queue_snapshot():
 
 
 def _monitor_loop():
-    """Continuous polling loop using concurrent pipeline."""
+    """Continuous polling loop using concurrent pipeline.
+
+    Wrapped in a top-level try/except so the thread never dies silently.
+    If a poll cycle crashes, the thread logs the error and retries after
+    a short delay.
+    """
     poller = FeedPoller()
     state.add_log(f"Monitor started ({config.NUM_WORKERS} workers).")
     state.started_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    _db.set_setting("started_at", state.started_at)
+    try:
+        _db.set_setting("started_at", state.started_at)
+    except Exception as exc:
+        state.add_log(f"[WARN] DB write failed (started_at): {exc}")
     poll_count = 0
 
     while not state._stop_event.is_set():
-        poll_count += 1
-        with state.lock:
-            state.running = True
-            state.last_poll = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        _db.set_setting("last_poll", state.last_poll)
+        try:
+            poll_count += 1
+            with state.lock:
+                state.running = True
+                state.last_poll = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            try:
+                _db.set_setting("last_poll", state.last_poll)
+            except Exception:
+                pass
 
-        # Sync already-flagged keys from DB
-        already = _db.get_flagged_keys()
-        pipeline.set_already_flagged(already)
+            # Sync already-flagged keys from DB
+            already = _db.get_flagged_keys()
+            pipeline.set_already_flagged(already)
 
-        state.add_log("Polling PyPI RSS feed …")
-        updates = poller.poll_once()
+            state.add_log("Polling PyPI RSS feed …")
+            updates = poller.poll_once()
 
-        if updates:
-            state.add_log(f"Found {len(updates)} new updates.")
-            # Enqueue all updates (pipeline handles skip/dedup/priority)
-            pipeline.enqueue(updates)
-            _update_queue_snapshot()
-            # Process concurrently
-            pipeline.process_queue()
-            _update_queue_snapshot()
-        else:
-            state.add_log("No new updates in feed.")
+            if updates:
+                state.add_log(f"Found {len(updates)} new updates.")
+                pipeline.enqueue(updates)
+                _update_queue_snapshot()
+                pipeline.process_queue()
+                _update_queue_snapshot()
+            else:
+                state.add_log("No new updates in feed.")
 
-        # Re-verify flagged packages >= 1 hour old
-        if poll_count % 3 == 0:  # every 3rd poll cycle
-            _reverify_stale_flags()
+            # Re-verify flagged packages >= 1 hour old
+            if poll_count % 3 == 0:
+                _reverify_stale_flags()
+
+        except Exception as exc:
+            state.add_log(f"[ERROR] Monitor loop error: {exc}")
+            logger.exception("Monitor loop error")
+            # Brief pause before retrying
+            for _ in range(10):
+                if state._stop_event.is_set():
+                    break
+                time.sleep(1)
+            continue
 
         # Calculate next poll time
         next_time = datetime.now(timezone.utc).timestamp() + state.poll_interval

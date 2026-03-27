@@ -40,6 +40,13 @@ _local = threading.local()
 def _get_conn() -> sqlite3.Connection:
     """Return a thread-local SQLite connection."""
     conn = getattr(_local, "conn", None)
+    if conn is not None:
+        # Verify the connection is still usable
+        try:
+            conn.execute("SELECT 1")
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            conn = None
+            _local.conn = None
     if conn is None:
         conn = sqlite3.connect(DB_PATH, timeout=15)
         conn.execute("PRAGMA journal_mode=WAL")
