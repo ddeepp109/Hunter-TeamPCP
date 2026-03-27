@@ -506,6 +506,18 @@ def get_logs(limit: int = 500) -> List[str]:
         return [f"[{r['timestamp']}]  {r['message']}" for r in cur.fetchall()]
 
 
+def hard_reset():
+    """Drop all data tables and recreate them.  Settings are preserved."""
+    with _cursor() as cur:
+        cur.executescript("""
+            DELETE FROM flagged_packages;
+            DELETE FROM scans;
+            DELETE FROM feed_seen;
+            DELETE FROM logs;
+        """)
+    logger.info("Hard reset: all scan data cleared.")
+
+
 # ── Migration: import old JSON files into DB ────────────────────────────────
 
 def migrate_from_json():

@@ -421,6 +421,27 @@ def api_trusted_delete(name: str):
     return jsonify({"ok": True})
 
 
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    """Hard-reset the database: clear all scans, flags, feed state, and logs."""
+    # Stop the monitor first if running
+    was_running = state.running
+    if was_running:
+        _stop_monitor()
+        time.sleep(1)
+
+    _db.hard_reset()
+
+    # Clear in-memory state
+    with state.lock:
+        state.log_lines.clear()
+        state.queue_snapshot_data = {}
+    pipeline.set_already_flagged(set())
+
+    state.add_log("🔴 Hard reset performed — all data cleared.")
+    return jsonify({"ok": True, "was_running": was_running})
+
+
 # ── Logging bridge ──────────────────────────────────────────────────────────
 
 class _WebLogHandler(logging.Handler):
