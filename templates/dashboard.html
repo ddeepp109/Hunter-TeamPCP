@@ -47,7 +47,7 @@
 <div class="tbl-wrap mb">
   <div class="tbl-head"><h2>Recent Scans</h2></div>
   <table>
-    <thead><tr><th>Package</th><th>Version</th><th>GitHub Repo</th><th>GitHub Releases</th><th>Result</th><th>Time</th></tr></thead>
+    <thead><tr><th>Package</th><th>PyPI Version</th><th>GitHub Repo</th><th>GitHub Releases</th><th>Result</th><th>Time</th></tr></thead>
     <tbody id="recent-body"><tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
   </table>
 </div>
@@ -112,8 +112,9 @@ async function refreshRecent(){
     const pypiLink=r.pypi_link||`https://pypi.org/project/${encodeURIComponent(r.name)}/${encodeURIComponent(r.version)}/`;
     const ghOwner=r.github_owner||'';
     const ghRepo=r.github_repo||'';
-    const ghLink=(ghOwner&&ghRepo)?`<a href="https://github.com/${esc(ghOwner)}/${esc(ghRepo)}" target="_blank" style="color:var(--cyan);">${esc(ghOwner)}/${esc(ghRepo)}</a>`:'<span class="text-muted">–</span>';
-    const ghRels=(r.github_releases||[]).slice(0,3).map(v=>`<code style="color:var(--cyan);font-size:12px;">${esc(v)}</code>`).join(', ')||'<span class="text-muted">–</span>';
+    const ghLink=(ghOwner&&ghRepo)?`<a href="https://github.com/${esc(ghOwner)}/${esc(ghRepo)}" target="_blank" style="color:var(--cyan);">${esc(ghOwner)}/${esc(ghRepo)}</a>`:'<span class="text-muted" style="font-size:11px;">No repo linked</span>';
+    const ghRelsArr=(r.github_releases||[]).slice(0,3);
+    const ghRels=ghRelsArr.length?ghRelsArr.map(v=>`<code style="color:var(--cyan);font-size:12px;">${esc(v)}</code>`).join(', '):'<span class="text-muted" style="font-size:11px;">No GitHub releases found</span>';
     return `<tr>
     <td><a href="${esc(pypiLink)}" target="_blank" style="color:var(--green);">${esc(r.name)}</a></td>
     <td><code style="color:var(--green);">${esc(r.version)}</code></td>
