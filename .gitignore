@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Data (persisted locally, not in repo)
+monitor.db
+monitor.db-shm
+monitor.db-wal
+
+# Logs
+*.log
+
+# Legacy JSON backups
+*.json.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

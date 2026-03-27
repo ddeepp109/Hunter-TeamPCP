@@ -1,0 +1,22 @@
+app = "pypi-github-monitor"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"        # keep running 24/7
+  auto_start_machines = true
+  min_machines_running = 1          # always-on
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[mounts]
+  source = "monitor_data"
+  destination = "/data"

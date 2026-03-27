@@ -428,16 +428,22 @@ def _setup_logging():
     root.addHandler(file_handler)
 
 
-# ── Entry point ─────────────────────────────────────────────────────────────
+# ── App factory (for gunicorn / Fly.io) ─────────────────────────────────────
 
-if __name__ == "__main__":
+_initialized = False
+
+
+def create_app():
+    """Initialise DB, restore settings, and start monitor once."""
+    global _initialized
+    if _initialized:
+        return app
+    _initialized = True
+
     _setup_logging()
-
-    # Initialise SQLite database and migrate any old JSON files
     _db.init_db()
     _db.migrate_from_json()
 
-    # Restore settings from DB
     saved_interval = _db.get_setting_int("poll_interval", config.POLL_INTERVAL_SECONDS)
     state.poll_interval = saved_interval
     config.POLL_INTERVAL_SECONDS = saved_interval
@@ -446,10 +452,18 @@ if __name__ == "__main__":
     pipeline._num_workers = saved_workers
 
     _start_monitor()
+    return app
+
+
+# ── Entry point ─────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    create_app()
     port = int(os.environ.get("PORT", 8050))
     print("\n  ╔══════════════════════════════════════════════════╗")
     print(f"  ║  PyPI ↔ GitHub Monitor – Web Dashboard           ║")
     print(f"  ║  http://127.0.0.1:{port:<38}║")
-    print(f"  ║  Database: monitor.db                             ║")
+    print(f"  ║  Database: {_db.DB_PATH:<43}║")
     print("  ╚══════════════════════════════════════════════════╝\n")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    host = os.environ.get("HOST", "0.0.0.0")
+    app.run(host=host, port=port, debug=False)

@@ -27,7 +27,8 @@ import config
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitor.db")
+DB_PATH = os.environ.get("DB_PATH",
+         os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitor.db"))
 
 # One connection per thread (SQLite requirement)
 _local = threading.local()
