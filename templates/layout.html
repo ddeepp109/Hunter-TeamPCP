@@ -121,31 +121,38 @@ input:focus, select:focus { border-color:var(--accent); }
 .worker-dot.busy { background:var(--green); animation:pulse 1s infinite; }
 
 /* ── First-time popup / onboarding modal ── */
-.onboard-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:9999; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
-.onboard-overlay.hidden { display:none; }
-.onboard-box { background:var(--bg2); border:1px solid var(--border); border-radius:14px; max-width:620px; width:92%; padding:0; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.onboard-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:9999; display:none; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+.onboard-overlay.visible { display:flex; }
+.onboard-box { background:var(--bg2); border:1px solid var(--border); border-radius:14px; max-width:660px; width:92%; padding:0; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); max-height:90vh; overflow-y:auto; }
 .onboard-header { padding:24px 28px 18px; border-bottom:1px solid var(--border); background:linear-gradient(135deg, rgba(248,81,73,.08), rgba(57,210,192,.06)); }
 .onboard-header .org-tag { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:var(--red); margin-bottom:6px; }
 .onboard-header h2 { font-size:20px; font-weight:700; color:var(--text); margin:0 0 4px; }
 .onboard-header h2 em { font-style:normal; color:var(--cyan); }
 .onboard-header p { font-size:12px; color:var(--text2); margin:0; }
 .onboard-body { padding:22px 28px; font-size:13px; line-height:1.75; color:var(--text2); }
-.onboard-body h3 { font-size:14px; color:var(--text); margin:16px 0 8px; font-weight:600; }
-.onboard-body h3:first-child { margin-top:0; }
-.onboard-body .step { display:flex; gap:12px; margin-bottom:14px; }
-.onboard-body .step .num { flex-shrink:0; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
-.onboard-body .step .num.s1 { background:rgba(88,166,255,.15); color:var(--accent); }
-.onboard-body .step .num.s2 { background:rgba(57,210,192,.15); color:var(--cyan); }
-.onboard-body .step .num.s3 { background:rgba(210,153,34,.15); color:var(--orange); }
-.onboard-body .step .num.s4 { background:rgba(248,81,73,.15); color:var(--red); }
-.onboard-body .step .num.s5 { background:rgba(63,185,80,.15); color:var(--green); }
-.onboard-body .step div { flex:1; }
-.onboard-body .step strong { color:var(--text); }
-.onboard-body .attack-ref { margin-top:16px; padding:12px 14px; background:rgba(248,81,73,.06); border:1px solid rgba(248,81,73,.15); border-radius:8px; font-size:12px; }
-.onboard-body .attack-ref strong { color:var(--red); }
-.onboard-footer { padding:16px 28px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
-.onboard-footer label { font-size:12px; color:var(--text2); cursor:pointer; display:flex; align-items:center; gap:6px; }
-.onboard-footer .btn-go { padding:8px 24px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; border:none; background:var(--cyan); color:var(--bg); transition:background .15s; }
+.onboard-body h3 { font-size:14px; color:var(--text); margin:0 0 16px; font-weight:600; }
+
+/* Flowchart */
+.flow { position:relative; padding-left:40px; }
+.flow::before { content:''; position:absolute; left:15px; top:14px; bottom:14px; width:2px; background:linear-gradient(var(--accent),var(--cyan),var(--orange),var(--red),var(--green)); border-radius:1px; }
+.flow-step { position:relative; margin-bottom:20px; }
+.flow-step:last-child { margin-bottom:0; }
+.flow-step .dot { position:absolute; left:-40px; top:2px; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; border:2px solid; }
+.flow-step .dot.d1 { background:rgba(88,166,255,.12); border-color:var(--accent); color:var(--accent); }
+.flow-step .dot.d2 { background:rgba(57,210,192,.12); border-color:var(--cyan); color:var(--cyan); }
+.flow-step .dot.d3 { background:rgba(210,153,34,.12); border-color:var(--orange); color:var(--orange); }
+.flow-step .dot.d4 { background:rgba(248,81,73,.12); border-color:var(--red); color:var(--red); }
+.flow-step .dot.d5 { background:rgba(63,185,80,.12); border-color:var(--green); color:var(--green); }
+.flow-step .title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:2px; }
+.flow-step .desc { font-size:12px; color:var(--text2); line-height:1.6; }
+.flow-step .arrow { position:absolute; left:-27px; bottom:-16px; font-size:10px; color:var(--text2); }
+
+.attack-box { margin-top:20px; padding:14px 16px; background:rgba(248,81,73,.06); border:1px solid rgba(248,81,73,.18); border-radius:8px; font-size:12px; line-height:1.7; }
+.attack-box strong { color:var(--red); }
+.attack-box em { color:var(--text); font-style:normal; }
+
+.onboard-footer { padding:16px 28px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; align-items:center; }
+.onboard-footer .btn-go { padding:9px 28px; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; border:none; background:var(--cyan); color:var(--bg); transition:background .15s; }
 .onboard-footer .btn-go:hover { background:var(--green); }
 
 @media(max-width:800px){
@@ -173,7 +180,7 @@ input:focus, select:focus { border-color:var(--accent); }
   <div class="status-pill stopped" id="sidebar-status">● Connecting…</div>
 </aside>
 
-<!-- First-time onboarding popup -->
+<!-- First-time onboarding popup (hidden by default, shown via JS only on first visit) -->
 <div class="onboard-overlay" id="onboard-overlay">
   <div class="onboard-box">
     <div class="onboard-header">
@@ -182,33 +189,43 @@ input:focus, select:focus { border-color:var(--accent); }
       <p>Real-time PyPI supply-chain threat detection platform</p>
     </div>
     <div class="onboard-body">
-      <h3>How It Works</h3>
-      <div class="step">
-        <div class="num s1">1</div>
-        <div><strong>Monitor PyPI Feed</strong> — We continuously poll the PyPI RSS updates feed every 2 minutes, tracking every newly published or updated package in real time.</div>
+      <h3>Detection Pipeline</h3>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="dot d1">1</div>
+          <div class="title">📡 Monitor PyPI RSS Feed</div>
+          <div class="desc">Poll <code style="color:var(--accent);">pypi.org/rss/updates.xml</code> every 2 min. Track all newly published or updated packages in real time.</div>
+          <div class="arrow">↓</div>
+        </div>
+        <div class="flow-step">
+          <div class="dot d2">2</div>
+          <div class="title">🔗 Resolve GitHub Repository</div>
+          <div class="desc">Extract the linked GitHub repo from <code style="color:var(--cyan);">project_urls</code> and <code style="color:var(--cyan);">home_page</code> in PyPI metadata. Skip packages with no GitHub link.</div>
+          <div class="arrow">↓</div>
+        </div>
+        <div class="flow-step">
+          <div class="dot d3">3</div>
+          <div class="title">🔍 Verify Version on GitHub</div>
+          <div class="desc">Check if the PyPI version has a matching release or tag. Handles PEP 440 ↔ semver, monorepo prefixes, and pre-release normalization.</div>
+          <div class="arrow">↓</div>
+        </div>
+        <div class="flow-step">
+          <div class="dot d4">4</div>
+          <div class="title">🚨 Flag &amp; Score Anomalies</div>
+          <div class="desc">Flag when PyPI has a version <strong style="color:var(--red);">not on GitHub</strong>. Confidence scoring: rapid publish ⚡, high downloads 🎯, yanked versions ⚠️.</div>
+          <div class="arrow">↓</div>
+        </div>
+        <div class="flow-step">
+          <div class="dot d5">5</div>
+          <div class="title">✅ Auto Re-verify (30 min)</div>
+          <div class="desc">Re-check flagged packages after 30 min. If a matching GitHub release appears (delayed publish), the flag is automatically cleared.</div>
+        </div>
       </div>
-      <div class="step">
-        <div class="num s2">2</div>
-        <div><strong>Resolve GitHub Repo</strong> — For each package, we extract the linked GitHub repository from PyPI project metadata (project_urls, homepage).</div>
-      </div>
-      <div class="step">
-        <div class="num s3">3</div>
-        <div><strong>Verify Version Match</strong> — We check if the PyPI version has a corresponding release or tag on GitHub. PEP 440 ↔ semver normalization handles format differences.</div>
-      </div>
-      <div class="step">
-        <div class="num s4">4</div>
-        <div><strong>Detect Anomalies</strong> — Packages are flagged when PyPI publishes a version with <strong>no matching GitHub release</strong>. Risk signals (rapid publish, high downloads, yanked versions) boost confidence scoring.</div>
-      </div>
-      <div class="step">
-        <div class="num s5">5</div>
-        <div><strong>Auto Re-verify</strong> — Flagged packages are re-checked after 30 minutes. If a matching GitHub release appears (delayed publish), the flag is automatically cleared.</div>
-      </div>
-      <div class="attack-ref">
-        <strong>🎯 Why TeamPCP?</strong> — This platform detects the exact attack pattern used by <strong>TeamPCP</strong> (telnyx, litellm compromises): attackers steal PyPI tokens and publish malicious versions <em>directly to PyPI without touching GitHub</em>. Our system catches this discrepancy in real time.
+      <div class="attack-box">
+        <strong>🎯 Why TeamPCP?</strong> — Detects the exact attack pattern from the <em>telnyx</em> and <em>litellm</em> compromises: attackers steal PyPI API tokens and publish malicious versions <strong>directly to PyPI</strong> without ever touching GitHub. This system catches that discrepancy in real time.
       </div>
     </div>
     <div class="onboard-footer">
-      <label><input type="checkbox" id="onboard-dismiss"> Don't show again</label>
       <button class="btn-go" id="onboard-go">Start Hunting →</button>
     </div>
   </div>
@@ -234,21 +251,17 @@ refreshStatus();
 
 /* ── Onboarding popup logic ── */
 (function(){
-  const overlay=document.getElementById('onboard-overlay');
+  var KEY='teampcp_onboard_seen';
+  var overlay=document.getElementById('onboard-overlay');
   if(!overlay)return;
-  if(localStorage.getItem('teampcp_onboard_dismissed')==='1'){
-    overlay.classList.add('hidden');
-    return;
-  }
-  document.getElementById('onboard-go').addEventListener('click',function(){
-    if(document.getElementById('onboard-dismiss').checked){
-      localStorage.setItem('teampcp_onboard_dismissed','1');
-    }
-    overlay.classList.add('hidden');
-  });
-  overlay.addEventListener('click',function(e){
-    if(e.target===overlay)overlay.classList.add('hidden');
-  });
+  // Already seen → never show
+  if(localStorage.getItem(KEY))return;
+  // First visit ever → show and mark as seen permanently
+  overlay.classList.add('visible');
+  localStorage.setItem(KEY,'1');
+  function close(){overlay.classList.remove('visible');}
+  document.getElementById('onboard-go').addEventListener('click',close);
+  overlay.addEventListener('click',function(e){if(e.target===overlay)close();});
 })();
 </script>
 {% block scripts %}{% endblock %}
