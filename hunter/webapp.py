@@ -426,6 +426,23 @@ def api_trusted_delete(name: str):
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     """Hard-reset the database: clear all scans, flags, feed state, and logs."""
+    data = request.get_json(silent=True) or {}
+    password = data.get("password", "")
+
+    # Load admin password from .secrets file or env var
+    admin_pw = os.environ.get("ADMIN_RESET_PASSWORD", "")
+    if not admin_pw:
+        secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
+        if os.path.isfile(secrets_path):
+            with open(secrets_path) as f:
+                for line in f:
+                    if line.startswith("ADMIN_RESET_PASSWORD="):
+                        admin_pw = line.split("=", 1)[1].strip()
+                        break
+
+    if not admin_pw or password != admin_pw:
+        return jsonify({"error": "Invalid password"}), 403
+
     # Stop the monitor first if running
     was_running = state.running
     if was_running:
