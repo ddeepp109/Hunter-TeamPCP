@@ -358,7 +358,16 @@ class Pipeline:
             if verification:
                 gh_owner = getattr(verification, "owner", "") or ""
                 gh_repo = getattr(verification, "repo", "") or ""
-                gh_releases = getattr(verification, "github_releases", []) or []
+                # Combine releases + tags (deduplicated, releases first) so
+                # the UI always has version data even if /releases was
+                # rate-limited but /tags succeeded.
+                rels = getattr(verification, "github_releases", []) or []
+                tags = getattr(verification, "github_tags", []) or []
+                seen = set()
+                for v in rels + tags:
+                    if v not in seen:
+                        gh_releases.append(v)
+                        seen.add(v)
             self._on_scan(
                 update.name, update.version, was_flagged,
                 github_owner=gh_owner, github_repo=gh_repo,
