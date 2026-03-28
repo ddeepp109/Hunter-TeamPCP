@@ -103,7 +103,7 @@ pip install -r requirements.txt
 export GITHUB_TOKEN="ghp_..."
 
 # Start the web dashboard (port 8050)
-python webapp.py
+python -m hunter.webapp
 ```
 
 Open **http://localhost:8050** to access the dashboard.
@@ -112,16 +112,16 @@ Open **http://localhost:8050** to access the dashboard.
 
 ```bash
 # Single scan — analyse current RSS feed and exit
-python monitor.py --once
+python -m hunter.monitor --once
 
 # Continuous monitoring
-python monitor.py
+python -m hunter.monitor
 
 # Custom poll interval (seconds)
-python monitor.py --interval 60
+python -m hunter.monitor --interval 60
 
 # Verbose logging
-python monitor.py --once -v
+python -m hunter.monitor --once -v
 ```
 
 ---
@@ -191,25 +191,31 @@ The app reads `$PORT` at runtime and stores data in `/app/data/monitor.db`.
 
 ```
 Hunter-TeamPCP/
-├── webapp.py              # Flask app + background monitor thread
-├── pipeline.py            # Concurrent processing engine (ThreadPoolExecutor)
-├── pypi_feed.py           # RSS feed poller with pubDate deduplication
-├── github_resolver.py     # Resolves GitHub owner/repo from PyPI metadata
-├── github_checker.py      # Verifies releases & tags with tag pattern matching
-├── flagger.py             # Classification engine + severity assignment
-├── pypi_analyzer.py       # Risk signal analysis + confidence scoring
-├── monitor.py             # CLI entry point
-├── db.py                  # SQLite persistence layer (WAL mode, thread-safe)
-├── config.py              # All configuration variables
-├── Dockerfile             # Production container (Python 3.13-slim + Gunicorn)
-├── requirements.txt       # Python dependencies
-└── templates/
-    ├── layout.html        # Base template with sidebar + TrendAI branding
-    ├── dashboard.html     # Main dashboard with KPIs and scan feed
-    ├── flagged.html       # Flagged packages table
-    ├── queue.html         # Worker queue live view
-    ├── logs.html          # Structured log viewer
-    └── settings.html      # Configuration panel
+├── hunter/                    # Core application package
+│   ├── __init__.py            # Package version & metadata
+│   ├── config.py              # All configuration variables
+│   ├── db.py                  # SQLite persistence layer (WAL mode, thread-safe)
+│   ├── flagger.py             # Classification engine + severity assignment
+│   ├── github_checker.py      # Verifies releases & tags with tag pattern matching
+│   ├── github_resolver.py     # Resolves GitHub owner/repo from PyPI metadata
+│   ├── pipeline.py            # Concurrent processing engine (ThreadPoolExecutor)
+│   ├── pypi_analyzer.py       # Risk signal analysis + confidence scoring
+│   ├── pypi_feed.py           # RSS feed poller with pubDate deduplication
+│   ├── webapp.py              # Flask app + routes + background monitor thread
+│   └── monitor.py             # CLI entry point
+├── templates/                 # Jinja2 web templates
+│   ├── layout.html            # Base template with sidebar + TrendAI branding
+│   ├── dashboard.html         # Main dashboard with KPIs and scan feed
+│   ├── flagged.html           # Flagged packages table
+│   ├── queue.html             # Worker queue live view
+│   ├── logs.html              # Structured log viewer
+│   └── settings.html          # Configuration panel
+├── Dockerfile                 # Production container (Python 3.13-slim + Gunicorn)
+├── fly.toml                   # Fly.io deployment config
+├── deploy.sh                  # Deployment helper script
+├── requirements.txt           # Python dependencies
+├── README.md
+└── .gitignore
 ```
 
 ---

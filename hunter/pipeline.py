@@ -20,12 +20,12 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 
-import config
-from flagger import FlaggedPackage, classify, _is_dev_version
-from github_checker import VerificationResult, verify_version
-from github_resolver import PyPIMetadata, fetch_pypi_metadata, find_github_repo
-from pypi_analyzer import RiskSignals, analyse_risks_with_metadata
-from pypi_feed import PackageUpdate
+from . import config
+from .flagger import FlaggedPackage, classify, _is_dev_version
+from .github_checker import VerificationResult, verify_version
+from .github_resolver import PyPIMetadata, fetch_pypi_metadata, find_github_repo
+from .pypi_analyzer import RiskSignals, analyse_risks_with_metadata
+from .pypi_feed import PackageUpdate
 
 logger = logging.getLogger(__name__)
 

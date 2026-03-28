@@ -14,7 +14,7 @@ from typing import List, Optional
 
 import requests
 
-import config
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class FeedPoller:
     """
 
     def __init__(self) -> None:
-        import db as _db
+        from . import db as _db
         self._db = _db
         # Load once into memory for fast lookups during a poll
         self._seen: dict[str, str] = self._db.get_feed_seen()

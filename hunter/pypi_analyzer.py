@@ -19,11 +19,11 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
-    from github_resolver import PyPIMetadata
+    from .github_resolver import PyPIMetadata
 
 import requests
 
-import config
+from . import config
 
 logger = logging.getLogger(__name__)
 

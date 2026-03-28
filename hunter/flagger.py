@@ -24,9 +24,9 @@ from typing import Dict, List, Optional, Set
 
 from packaging.version import Version, InvalidVersion
 
-import config
-from github_checker import VerificationResult
-from github_resolver import PyPIMetadata
+from . import config
+from .github_checker import VerificationResult
+from .github_resolver import PyPIMetadata
 
 
 # ── Dev / pre-release filter ─────────────────────────────────────────────────
@@ -207,7 +207,7 @@ def _is_different_version_series(
 # ── Trusted publishers ──────────────────────────────────────────────────────
 
 def is_trusted(package_name: str) -> bool:
-    import db as _db
+    from . import db as _db
     return _db.is_trusted_publisher(package_name)
 
 
@@ -374,7 +374,7 @@ def save_flagged(flags: List[FlaggedPackage]):
     stored once.  If re-flagged with a higher severity the entry is
     updated in-place.
     """
-    import db as _db
+    from . import db as _db
     for f in flags:
         _db.upsert_flagged(asdict(f))
     logger.info("Saved %d flagged packages to database", len(flags))

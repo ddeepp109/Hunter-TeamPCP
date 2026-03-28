@@ -11,8 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY config.py db.py flagger.py github_checker.py github_resolver.py \
-     monitor.py pipeline.py pypi_analyzer.py pypi_feed.py webapp.py ./
+COPY hunter/ hunter/
 COPY templates/ templates/
 
 # SQLite DB — /app/data works on both Railway and Fly.io
@@ -27,4 +26,4 @@ EXPOSE 8080
 # Use shell form so $PORT is expanded at runtime (Railway compatibility)
 # Do NOT use --preload: it runs create_app() in the master process,
 # and the monitor thread does not survive the fork into workers.
-CMD gunicorn --bind "0.0.0.0:$PORT" --workers 1 --threads 4 --timeout 120 "webapp:create_app()"
+CMD gunicorn --bind "0.0.0.0:$PORT" --workers 1 --threads 4 --timeout 120 "hunter.webapp:create_app()"

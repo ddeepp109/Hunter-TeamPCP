@@ -21,17 +21,17 @@ import logging
 import sys
 from typing import List
 
-import config
-from flagger import (
+from . import config
+from .flagger import (
     FlaggedPackage,
     classify,
     print_flag_summary,
     save_flagged,
 )
-from github_checker import verify_version
-from github_resolver import fetch_pypi_metadata, find_github_repo
-from pypi_analyzer import analyse_risks
-from pypi_feed import FeedPoller, PackageUpdate
+from .github_checker import verify_version
+from .github_resolver import fetch_pypi_metadata, find_github_repo
+from .pypi_analyzer import analyse_risks
+from .pypi_feed import FeedPoller, PackageUpdate
 
 __version__ = "1.0.0"
 

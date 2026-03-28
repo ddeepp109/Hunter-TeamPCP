@@ -18,17 +18,20 @@ import logging
 import os
 import sqlite3
 import threading
+
+from . import config
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import config
-
 logger = logging.getLogger(__name__)
 
+# Project root is one level above hunter/
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 DB_PATH = os.environ.get("DB_PATH",
-         os.path.join(os.path.dirname(os.path.abspath(__file__)), "monitor.db"))
+         os.path.join(_PROJECT_ROOT, "monitor.db"))
 
 # Ensure the DB directory exists (Railway/Docker may not pre-create it)
 os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)

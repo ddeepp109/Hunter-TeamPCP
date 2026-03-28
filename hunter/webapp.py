@@ -16,16 +16,18 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask, jsonify, render_template, request
 
-import config
-import db as _db
-from flagger import FlaggedPackage, classify, save_flagged, _is_dev_version
-from github_checker import verify_version
-from pipeline import Pipeline, Status
-from pypi_feed import FeedPoller, PackageUpdate
+from . import config
+from . import db as _db
+from .flagger import FlaggedPackage, classify, save_flagged, _is_dev_version
+from .github_checker import verify_version
+from .pipeline import Pipeline, Status
+from .pypi_feed import FeedPoller, PackageUpdate
 
 # ── Flask app ───────────────────────────────────────────────────────────────
 
-app = Flask(__name__)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+app = Flask(__name__, template_folder=os.path.join(_PROJECT_ROOT, "templates"))
 
 # ── In-memory state shared between monitor thread & web routes ──────────────
 
@@ -242,7 +244,7 @@ def _reverify_stale_flags():
 
         try:
             # Invalidate caches so we get fresh GitHub data
-            from pipeline import invalidate_caches_for
+            from .pipeline import invalidate_caches_for
             invalidate_caches_for(name, owner, repo_name)
 
             vr = verify_version(name, version, owner, repo_name)
