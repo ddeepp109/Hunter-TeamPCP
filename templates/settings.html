@@ -31,19 +31,6 @@
   </div>
 </div>
 
-<!-- Hard Reset -->
-<div class="tbl-wrap mb">
-  <div class="tbl-head"><h2>Hard Reset</h2></div>
-  <div style="padding:16px;">
-    <p style="font-size:13px;color:var(--text2);margin:0 0 12px;">Wipe <strong>all</strong> scans, flagged packages, feed state, and logs. The monitor will be stopped. Settings and trusted publishers are preserved.</p>
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <input type="password" id="reset-pw" placeholder="Admin password" style="width:180px;">
-      <button class="btn sm red" id="reset-btn" onclick="confirmReset()">🔴 Reset Database</button>
-      <span id="reset-msg" class="text-muted"></span>
-    </div>
-  </div>
-</div>
-
 <!-- Trusted Publishers -->
 <div class="tbl-wrap">
   <div class="tbl-head">
@@ -109,24 +96,6 @@ async function addTrusted(){
 async function removeTrusted(name){
   await api('/api/trusted/'+encodeURIComponent(name),{method:'DELETE'});
   loadTrusted();
-}
-
-async function confirmReset(){
-  const pw=document.getElementById('reset-pw').value;
-  if(!pw){document.getElementById('reset-msg').style.color='var(--red)';document.getElementById('reset-msg').textContent='Enter admin password.';setTimeout(()=>document.getElementById('reset-msg').textContent='',3000);return;}
-  if(!confirm('⚠️ This will permanently delete ALL scans, flagged packages, feed history, and logs.\n\nSettings and trusted publishers will be kept.\n\nAre you sure?'))return;
-  const btn=document.getElementById('reset-btn');
-  const msg=document.getElementById('reset-msg');
-  btn.disabled=true;btn.textContent='Resetting…';
-  const r=await api('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
-  btn.disabled=false;btn.textContent='🔴 Reset Database';
-  document.getElementById('reset-pw').value='';
-  if(r.ok){
-    msg.style.color='var(--green)';msg.textContent='✓ Database reset complete. Start the monitor to begin fresh.';
-  } else {
-    msg.style.color='var(--red)';msg.textContent=r.error||'Failed';
-  }
-  setTimeout(()=>msg.textContent='',6000);
 }
 
 function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}

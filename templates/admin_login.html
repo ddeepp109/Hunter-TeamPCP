@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block title %}Admin Login – TrendAI ZDI TeamPCP Hunter{% endblock %}
+
+{% block content %}
+<div style="max-width:400px;margin:80px auto;">
+  <div class="tbl-wrap">
+    <div class="tbl-head"><h2>🔒 Admin Access</h2></div>
+    <div style="padding:24px;">
+      <p style="font-size:13px;color:var(--text2);margin:0 0 16px;">Enter the admin password to access the control panel.</p>
+      <input type="password" id="admin-pw" placeholder="Admin password" style="width:100%;margin-bottom:12px;" autofocus>
+      <button class="btn green" id="login-btn" onclick="doLogin()" style="width:100%;">Unlock Admin Panel</button>
+      <div id="login-msg" style="margin-top:10px;font-size:13px;text-align:center;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('admin-pw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+
+async function doLogin(){
+  const pw=document.getElementById('admin-pw').value;
+  const msg=document.getElementById('login-msg');
+  const btn=document.getElementById('login-btn');
+  if(!pw){msg.style.color='var(--red)';msg.textContent='Enter password.';return;}
+  btn.disabled=true;btn.textContent='Verifying…';
+  const r=await api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  btn.disabled=false;btn.textContent='Unlock Admin Panel';
+  if(r.ok){
+    window.location.reload();
+  } else {
+    msg.style.color='var(--red)';msg.textContent=r.error||'Invalid password';
+    document.getElementById('admin-pw').value='';
+    document.getElementById('admin-pw').focus();
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,115 @@
+{% extends "layout.html" %}
+{% block title %}Admin Panel – TrendAI ZDI TeamPCP Hunter{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+  <h1>🔐 Admin Panel</h1>
+  <button class="btn sm red" onclick="doLogout()">Logout</button>
+</div>
+
+<!-- Online Now -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head">
+    <h2>🟢 Online Now <span id="online-count" style="font-size:13px;color:var(--green);font-weight:400;margin-left:8px;"></span></h2>
+    <span class="text-muted">Visitors active in the last 5 minutes</span>
+  </div>
+  <table>
+    <thead><tr><th>IP Address</th><th>Last Page</th><th>Last Seen</th><th>Browser</th></tr></thead>
+    <tbody id="online-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Visitor Stats -->
+<div class="cards mb" style="display:flex;gap:16px;flex-wrap:wrap;">
+  <div class="card"><div class="label">Total Page Views</div><div class="value green" id="stat-total">–</div></div>
+  <div class="card"><div class="label">Unique Visitors</div><div class="value" style="color:var(--cyan);" id="stat-unique">–</div></div>
+  <div class="card"><div class="label">Online Now</div><div class="value" style="color:var(--green);" id="stat-online">–</div></div>
+</div>
+
+<!-- Recent Visitors -->
+<div class="tbl-wrap mb">
+  <div class="tbl-head"><h2>📋 Recent Visitors</h2></div>
+  <table>
+    <thead><tr><th>IP Address</th><th>Page</th><th>Time (UTC)</th><th>Browser</th></tr></thead>
+    <tbody id="visitors-body"><tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- Hard Reset -->
+<div class="tbl-wrap">
+  <div class="tbl-head"><h2>🔴 Hard Reset Database</h2></div>
+  <div style="padding:16px;">
+    <p style="font-size:13px;color:var(--text2);margin:0 0 12px;">Wipe <strong>all</strong> scans, flagged packages, feed state, visitors, and logs. The monitor will be stopped. Settings and trusted publishers are preserved.</p>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="btn sm red" id="reset-btn" onclick="confirmReset()">🔴 Reset Database</button>
+      <span id="reset-msg" class="text-muted"></span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function shortUA(ua){
+  if(!ua)return '–';
+  const m=ua.match(/(Chrome|Firefox|Safari|Edge|Opera|MSIE|Trident|curl|python-requests|Go-http-client)[\/\s]?([\d.]*)/i);
+  return m ? m[1]+' '+m[2] : (ua.length>40 ? ua.slice(0,40)+'…' : ua);
+}
+
+async function loadAdmin(){
+  const r=await api('/api/admin/visitors');
+  if(r.error){window.location.reload();return;}
+
+  // Stats
+  document.getElementById('stat-total').textContent=r.stats.total_visits.toLocaleString();
+  document.getElementById('stat-unique').textContent=r.stats.unique_visitors.toLocaleString();
+  document.getElementById('stat-online').textContent=r.online.length;
+  document.getElementById('online-count').textContent='('+r.online.length+')';
+
+  // Online table
+  const ob=document.getElementById('online-body');
+  if(!r.online.length){ob.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">No one online right now.</td></tr>';}
+  else{ob.innerHTML=r.online.map(v=>`<tr>
+    <td><code style="color:var(--green);">${esc(v.ip)}</code></td>
+    <td>${esc(v.last_path)}</td>
+    <td class="text-muted">${esc(v.last_seen)}</td>
+    <td class="text-muted" style="font-size:11px;">${esc(shortUA(v.user_agent))}</td>
+  </tr>`).join('');}
+
+  // Recent visitors table
+  const vb=document.getElementById('visitors-body');
+  if(!r.recent.length){vb.innerHTML='<tr><td colspan="4" class="text-muted" style="text-align:center;padding:20px;">No visitors yet.</td></tr>';}
+  else{vb.innerHTML=r.recent.slice(0,100).map(v=>`<tr>
+    <td><code style="color:var(--accent);">${esc(v.ip)}</code></td>
+    <td>${esc(v.path)}</td>
+    <td class="text-muted">${esc(v.visited_at)}</td>
+    <td class="text-muted" style="font-size:11px;">${esc(shortUA(v.user_agent))}</td>
+  </tr>`).join('');}
+}
+
+async function confirmReset(){
+  if(!confirm('⚠️ This will permanently delete ALL scans, flagged packages, feed history, visitors, and logs.\n\nSettings and trusted publishers will be kept.\n\nAre you sure?'))return;
+  const btn=document.getElementById('reset-btn');
+  const msg=document.getElementById('reset-msg');
+  btn.disabled=true;btn.textContent='Resetting…';
+  const r=await api('/api/reset',{method:'POST'});
+  btn.disabled=false;btn.textContent='🔴 Reset Database';
+  if(r.ok){
+    msg.style.color='var(--green)';msg.textContent='✓ Database reset. Start the monitor to begin fresh.';
+  } else {
+    msg.style.color='var(--red)';msg.textContent=r.error||'Failed';
+  }
+  setTimeout(()=>msg.textContent='',6000);
+}
+
+async function doLogout(){
+  await api('/api/admin/logout',{method:'POST'});
+  window.location.href='/admin';
+}
+
+function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML;}
+
+loadAdmin();
+setInterval(loadAdmin,5000);
+</script>
+{% endblock %}

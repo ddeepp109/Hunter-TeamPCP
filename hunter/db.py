@@ -22,7 +22,7 @@ import threading
 from . import config
 from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,15 @@ def init_db():
             timestamp  TEXT NOT NULL,
             message    TEXT NOT NULL
         );
-        """)
+        CREATE TABLE IF NOT EXISTS visitors (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip         TEXT NOT NULL,
+            path       TEXT NOT NULL DEFAULT '/',
+            user_agent TEXT DEFAULT '',
+            visited_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_visitors_time ON visitors(visited_at DESC);        """)
 
     # Migrate: add columns to scans if they don't exist yet (existing DBs)
     try:
@@ -517,8 +525,59 @@ def hard_reset():
             DELETE FROM scans;
             DELETE FROM feed_seen;
             DELETE FROM logs;
+            DELETE FROM visitors;
         """)
     logger.info("Hard reset: all scan data cleared.")
+
+
+# ── Visitors ────────────────────────────────────────────────────────────────
+
+def record_visit(ip: str, path: str, user_agent: str) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with _cursor() as cur:
+        cur.execute(
+            "INSERT INTO visitors (ip, path, user_agent, visited_at) VALUES (?,?,?,?)",
+            (ip, path, user_agent, ts),
+        )
+        # Keep only last 5000 entries
+        cur.execute("""
+            DELETE FROM visitors WHERE id NOT IN (
+                SELECT id FROM visitors ORDER BY id DESC LIMIT 5000
+            )
+        """)
+
+
+def get_visitors(limit: int = 200) -> List[dict]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ip, path, user_agent, visited_at FROM visitors ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_online_visitors(minutes: int = 5) -> List[dict]:
+    """Return distinct IPs that visited in the last N minutes."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    with _cursor() as cur:
+        cur.execute("""
+            SELECT ip, MAX(visited_at) as last_seen,
+                   MAX(path) as last_path, MAX(user_agent) as user_agent
+            FROM visitors
+            WHERE visited_at >= ?
+            GROUP BY ip
+            ORDER BY last_seen DESC
+        """, (cutoff,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_visitor_stats() -> dict:
+    with _cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM visitors")
+        total = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(DISTINCT ip) FROM visitors")
+        unique = cur.fetchone()[0]
+        return {"total_visits": total, "unique_visitors": unique}
 
 
 # ── Migration: import old JSON files into DB ────────────────────────────────

@@ -14,7 +14,7 @@ from collections import deque
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session
 
 from . import config
 from . import db as _db
@@ -28,6 +28,25 @@ from .pypi_feed import FeedPoller, PackageUpdate
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__, template_folder=os.path.join(_PROJECT_ROOT, "templates"))
+app.secret_key = os.environ.get("SECRET_KEY", "hunter-teampcp-session-key-change-me")
+
+
+# ── Visitor tracking middleware ─────────────────────────────────────────────
+
+@app.before_request
+def _track_visitor():
+    """Log every page visit (skip static / API polling noise)."""
+    path = request.path
+    if path.startswith("/api/"):
+        return  # Don't log API polling
+    try:
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+        if "," in ip:
+            ip = ip.split(",")[0].strip()
+        ua = request.headers.get("User-Agent", "")[:256]
+        _db.record_visit(ip, path, ua)
+    except Exception:
+        pass
 
 # ── In-memory state shared between monitor thread & web routes ──────────────
 
@@ -312,6 +331,57 @@ def queue_page():
     return render_template("queue.html")
 
 
+# ── Admin helpers ───────────────────────────────────────────────────────────
+
+def _load_admin_password() -> str:
+    """Load admin password from env var or .secrets file."""
+    pw = os.environ.get("ADMIN_RESET_PASSWORD", "")
+    if not pw:
+        secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
+        if os.path.isfile(secrets_path):
+            with open(secrets_path) as f:
+                for line in f:
+                    if line.startswith("ADMIN_RESET_PASSWORD="):
+                        pw = line.split("=", 1)[1].strip()
+                        break
+    return pw
+
+
+@app.route("/admin")
+def admin_page():
+    if not session.get("admin_authed"):
+        return render_template("admin_login.html")
+    return render_template("admin.html")
+
+
+@app.route("/api/admin/login", methods=["POST"])
+def api_admin_login():
+    data = request.get_json(silent=True) or {}
+    password = data.get("password", "")
+    admin_pw = _load_admin_password()
+    if not admin_pw or password != admin_pw:
+        return jsonify({"error": "Invalid password"}), 403
+    session["admin_authed"] = True
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/logout", methods=["POST"])
+def api_admin_logout():
+    session.pop("admin_authed", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/visitors")
+def api_admin_visitors():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
+    return jsonify({
+        "stats": _db.get_visitor_stats(),
+        "online": _db.get_online_visitors(minutes=5),
+        "recent": _db.get_visitors(limit=200),
+    })
+
+
 # ── Flask routes – API ──────────────────────────────────────────────────────
 
 @app.route("/api/status")
@@ -426,22 +496,8 @@ def api_trusted_delete(name: str):
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     """Hard-reset the database: clear all scans, flags, feed state, and logs."""
-    data = request.get_json(silent=True) or {}
-    password = data.get("password", "")
-
-    # Load admin password from .secrets file or env var
-    admin_pw = os.environ.get("ADMIN_RESET_PASSWORD", "")
-    if not admin_pw:
-        secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
-        if os.path.isfile(secrets_path):
-            with open(secrets_path) as f:
-                for line in f:
-                    if line.startswith("ADMIN_RESET_PASSWORD="):
-                        admin_pw = line.split("=", 1)[1].strip()
-                        break
-
-    if not admin_pw or password != admin_pw:
-        return jsonify({"error": "Invalid password"}), 403
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
 
     # Stop the monitor first if running
     was_running = state.running
