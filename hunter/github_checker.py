@@ -124,38 +124,106 @@ class _ApiError(Exception):
     """Raised when a GitHub API call fails due to rate limiting or network."""
 
 
+class _RateLimited(Exception):
+    """Raised specifically when rate-limited and retries are exhausted."""
+
+
+def _get_rate_limit_remaining() -> Tuple[int, int]:
+    """Query /rate_limit and return (remaining, reset_timestamp).
+
+    Returns (-1, 0) if the endpoint is unreachable.
+    """
+    try:
+        resp = _SESSION.get(f"{config.GITHUB_API}/rate_limit", timeout=10)
+        if resp.status_code == 200:
+            core = resp.json().get("resources", {}).get("core", {})
+            return core.get("remaining", -1), core.get("reset", 0)
+    except requests.RequestException:
+        pass
+    return -1, 0
+
+
+def _wait_for_rate_reset(reset_ts: int, label: str = "") -> None:
+    """Sleep until the rate-limit window resets (capped at 120 s)."""
+    wait = max(0, reset_ts - int(time.time())) + 2  # +2 s buffer
+    wait = min(wait, 120)  # never wait more than 2 min
+    if wait > 0:
+        logger.info(
+            "Rate limit hit%s – waiting %ds for reset…",
+            f" ({label})" if label else "", wait,
+        )
+        time.sleep(wait)
+
+
+_MAX_RATE_RETRIES = 2
+
+
 def _gh_api(path: str, raise_on_error: bool = False) -> Optional[requests.Response]:
     """Make a rate-limit-aware GET to the GitHub API.
 
-    When *raise_on_error* is True, raises ``_ApiError`` on rate-limit /
-    network failures so callers can distinguish "not found" from "API down".
+    On 403, checks /rate_limit to distinguish genuine rate limits from
+    private/forbidden repos.  If rate-limited, waits for reset and retries
+    up to ``_MAX_RATE_RETRIES`` times.
+
+    When *raise_on_error* is True, raises ``_ApiError`` on non-rate-limit
+    failures so callers can distinguish "not found" from "API down".
     """
     url = f"{config.GITHUB_API}{path}"
-    time.sleep(config.REQUEST_DELAY_SECONDS)
-    try:
-        resp = _SESSION.get(url, timeout=30)
-        if resp.status_code == 403:
-            reset = resp.headers.get("X-RateLimit-Reset")
-            logger.warning("GitHub rate limit hit (reset: %s)", reset)
+    for attempt in range(_MAX_RATE_RETRIES + 1):
+        time.sleep(config.REQUEST_DELAY_SECONDS)
+        try:
+            resp = _SESSION.get(url, timeout=30)
+        except requests.RequestException as exc:
+            logger.error("GitHub API error (%s): %s", path, exc)
             if raise_on_error:
-                raise _ApiError(f"Rate limited (reset {reset})")
+                raise _ApiError(str(exc)) from exc
             return None
-        return resp
-    except requests.RequestException as exc:
-        logger.error("GitHub API error (%s): %s", path, exc)
-        if raise_on_error:
-            raise _ApiError(str(exc)) from exc
-        return None
+
+        if resp.status_code != 403:
+            return resp
+
+        # Got 403 – determine if it's a rate limit or access denied.
+        remaining, reset_ts = _get_rate_limit_remaining()
+
+        if remaining == 0:
+            # Confirmed rate limit – wait and retry
+            logger.warning(
+                "GitHub rate limit confirmed via /rate_limit (attempt %d/%d, path=%s)",
+                attempt + 1, _MAX_RATE_RETRIES + 1, path,
+            )
+            if attempt < _MAX_RATE_RETRIES:
+                _wait_for_rate_reset(reset_ts, label=path)
+                continue
+            # Exhausted retries
+            if raise_on_error:
+                raise _ApiError(f"Rate limited after {_MAX_RATE_RETRIES + 1} attempts (reset {reset_ts})")
+            return None
+
+        # remaining > 0 or unknown (-1): this 403 is NOT a rate limit.
+        # The repo is private, DMCA'd, or access is otherwise forbidden.
+        logger.info(
+            "GitHub 403 on %s is NOT rate-limit (remaining=%s) – repo likely private/forbidden",
+            path, remaining,
+        )
+        return resp  # Return the 403 response so callers can handle it
+
+    return None  # unreachable, but keeps type checker happy
 
 
 def _repo_exists(owner: str, repo: str) -> Optional[bool]:
-    """Return True/False, or None if the check was inconclusive (API error)."""
+    """Return True/False, or None if the check was inconclusive (API error).
+
+    A 403 with remaining quota means private/forbidden → returns False.
+    A 403 from rate limiting → returns None (inconclusive).
+    """
     try:
         resp = _gh_api(f"/repos/{owner}/{repo}", raise_on_error=True)
     except _ApiError:
-        return None
+        return None  # rate limit exhausted – inconclusive
     if resp is None:
         return None
+    if resp.status_code == 403:
+        return False  # private or forbidden (not rate-limited)
     return resp.status_code == 200
 
 
@@ -167,6 +235,8 @@ def _check_single_tag(owner: str, repo: str, tag: str) -> bool:
         raise  # propagate so caller knows result is inconclusive
     if resp is None:
         raise _ApiError("No response")
+    if resp.status_code == 403:
+        return False  # private/forbidden, already confirmed not rate-limited
     return resp.status_code == 200
 
 
@@ -179,8 +249,12 @@ def _check_releases(owner: str, repo: str, candidates: List[str]) -> Tuple[Optio
         resp = _gh_api(f"/repos/{owner}/{repo}/releases?per_page=100", raise_on_error=True)
     except _ApiError:
         raise
-    if resp is None or resp.status_code != 200:
-        raise _ApiError(f"Releases endpoint returned {resp.status_code if resp else 'None'}")
+    if resp is None:
+        raise _ApiError("Releases endpoint returned None")
+    if resp.status_code == 403:
+        return None, []  # private/forbidden, not rate-limited
+    if resp.status_code != 200:
+        raise _ApiError(f"Releases endpoint returned {resp.status_code}")
 
     release_tags = []
     release_tags_set = set()
@@ -242,7 +316,9 @@ def _list_tags(owner: str, repo: str) -> List[str]:
             )
         except _ApiError:
             raise
-        if resp is None or resp.status_code != 200:
+        if resp is None or resp.status_code == 403:
+            break  # 403 = private/forbidden (non-rate-limit), stop paging
+        if resp.status_code != 200:
             break
         data = resp.json()
         if not data:
