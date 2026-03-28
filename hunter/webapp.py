@@ -335,12 +335,13 @@ def queue_page():
 
 def _load_admin_password() -> str:
     """Load admin password from env var or .secrets file."""
-    pw = os.environ.get("ADMIN_RESET_PASSWORD", "")
+    pw = os.environ.get("ADMIN_RESET_PASSWORD", "").strip()
     if not pw:
         secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
         if os.path.isfile(secrets_path):
             with open(secrets_path) as f:
                 for line in f:
+                    line = line.strip()
                     if line.startswith("ADMIN_RESET_PASSWORD="):
                         pw = line.split("=", 1)[1].strip()
                         break
@@ -359,10 +360,26 @@ def api_admin_login():
     data = request.get_json(silent=True) or {}
     password = data.get("password", "")
     admin_pw = _load_admin_password()
-    if not admin_pw or password != admin_pw:
+    if not admin_pw:
+        return jsonify({"error": "No admin password configured (set ADMIN_RESET_PASSWORD env var)"}), 403
+    if password != admin_pw:
         return jsonify({"error": "Invalid password"}), 403
     session["admin_authed"] = True
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/debug")
+def api_admin_debug():
+    """Temporary: check if password is configured (shows no secret data)."""
+    pw = _load_admin_password()
+    secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
+    return jsonify({
+        "env_var_set": bool(os.environ.get("ADMIN_RESET_PASSWORD", "")),
+        "secrets_file_exists": os.path.isfile(secrets_path),
+        "project_root": _PROJECT_ROOT,
+        "password_loaded": bool(pw),
+        "password_length": len(pw) if pw else 0,
+    })
 
 
 @app.route("/api/admin/logout", methods=["POST"])
