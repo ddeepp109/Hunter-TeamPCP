@@ -234,13 +234,67 @@ input:focus, select:focus { border-color:var(--accent); }
   </div>
 </div>
 
+<!-- Password authentication modal (shared across all pages) -->
+<div class="onboard-overlay" id="auth-overlay">
+  <div class="onboard-box" style="max-width:400px;">
+    <div class="onboard-header" style="background:linear-gradient(135deg,rgba(248,81,73,.08),rgba(88,166,255,.06));">
+      <h2>🔒 Authentication Required</h2>
+      <p style="font-size:12px;color:var(--text2);margin:4px 0 0;">Enter the admin password to continue</p>
+    </div>
+    <div style="padding:20px 28px;">
+      <input type="password" id="auth-password" placeholder="Admin password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 14px;border-radius:6px;font-size:14px;outline:none;" onkeydown="if(event.key==='Enter')submitAuth()">
+      <div id="auth-error" style="color:var(--red);font-size:12px;margin-top:8px;min-height:16px;"></div>
+    </div>
+    <div class="onboard-footer" style="gap:10px;">
+      <button class="btn" onclick="cancelAuth()">Cancel</button>
+      <button class="btn-go" onclick="submitAuth()">Authenticate</button>
+    </div>
+  </div>
+</div>
+
 <main class="main">
   {% block content %}{% endblock %}
 </main>
 
 <script>
+/* ── Auth modal logic ─────────────────────── */
+let _authResolve=null;
+function showAuthModal(){
+  return new Promise(resolve=>{
+    _authResolve=resolve;
+    document.getElementById('auth-overlay').classList.add('visible');
+    document.getElementById('auth-password').value='';
+    document.getElementById('auth-error').textContent='';
+    setTimeout(()=>document.getElementById('auth-password').focus(),100);
+  });
+}
+async function submitAuth(){
+  const pw=document.getElementById('auth-password').value;
+  if(!pw){document.getElementById('auth-error').textContent='Please enter a password';return;}
+  const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  const data=await r.json();
+  if(r.ok){
+    document.getElementById('auth-overlay').classList.remove('visible');
+    if(_authResolve)_authResolve(true);
+  } else {
+    document.getElementById('auth-error').textContent=data.error||'Invalid password';
+  }
+}
+function cancelAuth(){
+  document.getElementById('auth-overlay').classList.remove('visible');
+  if(_authResolve)_authResolve(false);
+}
+
 /* ── Shared helpers ───────────────────────── */
-async function api(path,opts){const r=await fetch(path,opts);return r.json();}
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  if(r.status===403){
+    const ok=await showAuthModal();
+    if(ok){const r2=await fetch(path,opts);return r2.json();}
+    return {error:'Authentication required'};
+  }
+  return r.json();
+}
 
 async function refreshStatus(){
   const s=await api('/api/status');

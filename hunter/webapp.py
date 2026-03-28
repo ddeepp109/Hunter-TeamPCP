@@ -368,20 +368,6 @@ def api_admin_login():
     return jsonify({"ok": True})
 
 
-@app.route("/api/admin/debug")
-def api_admin_debug():
-    """Temporary: check if password is configured (shows no secret data)."""
-    pw = _load_admin_password()
-    secrets_path = os.path.join(_PROJECT_ROOT, ".secrets")
-    return jsonify({
-        "env_var_set": bool(os.environ.get("ADMIN_RESET_PASSWORD", "")),
-        "secrets_file_exists": os.path.isfile(secrets_path),
-        "project_root": _PROJECT_ROOT,
-        "password_loaded": bool(pw),
-        "password_length": len(pw) if pw else 0,
-    })
-
-
 @app.route("/api/admin/logout", methods=["POST"])
 def api_admin_logout():
     session.pop("admin_authed", None)
@@ -445,18 +431,24 @@ def api_logs():
 
 @app.route("/api/monitor/start", methods=["POST"])
 def api_start():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     ok = _start_monitor()
     return jsonify({"started": ok})
 
 
 @app.route("/api/monitor/stop", methods=["POST"])
 def api_stop():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     _stop_monitor()
     return jsonify({"stopped": True})
 
 
 @app.route("/api/settings/interval", methods=["POST"])
 def api_interval():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     data = request.get_json(silent=True) or {}
     val = data.get("interval")
     if val is None or not isinstance(val, (int, float)) or val < 10:
@@ -470,6 +462,8 @@ def api_interval():
 
 @app.route("/api/settings/workers", methods=["POST"])
 def api_workers():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     data = request.get_json(silent=True) or {}
     val = data.get("workers")
     if val is None or not isinstance(val, int) or val < 1 or val > 16:
@@ -488,6 +482,8 @@ def api_trusted():
 
 @app.route("/api/trusted", methods=["POST"])
 def api_trusted_add():
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
     note = data.get("note", "").strip()
@@ -503,6 +499,8 @@ def api_trusted_add():
 
 @app.route("/api/trusted/<name>", methods=["DELETE"])
 def api_trusted_delete(name: str):
+    if not session.get("admin_authed"):
+        return jsonify({"error": "Unauthorized"}), 403
     if not _db.remove_trusted_publisher(name):
         return jsonify({"error": "not found"}), 404
 
