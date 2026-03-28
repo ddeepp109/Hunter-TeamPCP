@@ -23,6 +23,8 @@ from .github_checker import verify_version
 from .pipeline import Pipeline, Status
 from .pypi_feed import FeedPoller, PackageUpdate
 
+logger = logging.getLogger(__name__)
+
 # ── Flask app ───────────────────────────────────────────────────────────────
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
