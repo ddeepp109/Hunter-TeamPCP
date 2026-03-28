@@ -93,7 +93,7 @@ class RiskSignals:
         if self.monthly_downloads is not None:
             if self.monthly_downloads > 500_000:
                 score += 30  # top-tier target
-            elif self.monthly_downloads > 50_000:
+            elif self.monthly_downloads > config.HIGH_VALUE_DOWNLOADS:
                 score += 20  # high-value target
             elif self.monthly_downloads > 10_000:
                 score += 10  # moderate target
@@ -163,8 +163,8 @@ def check_version_velocity(package: str, version: str) -> Tuple[bool, Optional[f
 
     gap = (curr_time - prior_time).total_seconds() / 60.0  # minutes
 
-    # Flag if published within 30 minutes of prior version
-    is_rapid = gap < 30.0
+    # Flag if published within configured threshold of prior version
+    is_rapid = gap < config.RAPID_PUBLISH_MINUTES
 
     return is_rapid, gap, prior_ver
 
@@ -261,7 +261,7 @@ def analyse_risks(package: str, version: str, skip_downloads: bool = False) -> R
         monthly = get_download_stats(package)
         if monthly is not None:
             signals.monthly_downloads = monthly
-            signals.is_high_value = monthly > 50_000
+            signals.is_high_value = monthly > config.HIGH_VALUE_DOWNLOADS
 
     # 3. Yanked versions
     has_yanked, yanked_list = check_yanked_versions(package, version)
@@ -373,7 +373,7 @@ def analyse_risks_with_metadata(
         monthly = get_download_stats(package)
         if monthly is not None:
             signals.monthly_downloads = monthly
-            signals.is_high_value = monthly > 50_000
+            signals.is_high_value = monthly > config.HIGH_VALUE_DOWNLOADS
 
     # 3. Yanked — use cached JSON if available
     if pypi_json and "releases" in pypi_json:

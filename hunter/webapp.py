@@ -178,8 +178,8 @@ def _monitor_loop():
             else:
                 state.add_log("No new updates in feed.")
 
-            # Re-verify flagged packages >= 1 hour old
-            if poll_count % 3 == 0:
+            # Re-verify flagged packages >= 30 min old
+            if poll_count % config.REVERIFY_EVERY_N_POLLS == 0:
                 _reverify_stale_flags()
 
         except Exception as exc:
@@ -222,7 +222,7 @@ def _reverify_stale_flags():
     - The version is now recognised as dev/pre-release (rule change).
     - The resolver no longer finds a GitHub repo (so we skip it).
     """
-    candidates = _db.get_flagged_for_reverify(min_age_seconds=1800)
+    candidates = _db.get_flagged_for_reverify(min_age_seconds=config.REVERIFY_MIN_AGE_SECONDS)
 
     if not candidates:
         return
@@ -277,7 +277,8 @@ def _reverify_stale_flags():
                     f"  ✗ {name} {version} – still no match after {age_str}"
                 )
         except Exception:
-            pass  # leave flag as-is if re-check fails
+            logger.warning("Re-verify failed for %s %s", name, version, exc_info=True)
+            state.add_log(f"  ⚠ {name} {version} – re-verify error, keeping flag")
 
     if resolved_keys:
         removed = _db.delete_flagged_batch(resolved_keys)
@@ -355,15 +356,34 @@ def admin_page():
     return render_template("admin.html")
 
 
+# ── Login rate limiting ────────────────────────────────────────────────────
+_login_attempts: dict = {}  # ip -> (count, first_attempt_ts)
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+
+
 @app.route("/api/admin/login", methods=["POST"])
 def api_admin_login():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    if "," in ip:
+        ip = ip.split(",")[0].strip()
+
+    now = time.time()
+    count, first_ts = _login_attempts.get(ip, (0, now))
+    if now - first_ts > _LOGIN_WINDOW_SECONDS:
+        count, first_ts = 0, now
+    if count >= _LOGIN_MAX_ATTEMPTS:
+        return jsonify({"error": f"Too many attempts. Try again in {int(_LOGIN_WINDOW_SECONDS - (now - first_ts))}s"}), 429
+
     data = request.get_json(silent=True) or {}
     password = data.get("password", "")
     admin_pw = _load_admin_password()
     if not admin_pw:
         return jsonify({"error": "No admin password configured (set ADMIN_RESET_PASSWORD env var)"}), 403
     if password != admin_pw:
+        _login_attempts[ip] = (count + 1, first_ts)
         return jsonify({"error": "Invalid password"}), 403
+    _login_attempts.pop(ip, None)
     session["admin_authed"] = True
     return jsonify({"ok": True})
 
@@ -572,6 +592,13 @@ def create_app():
     _initialized = True
 
     _setup_logging()
+
+    # Warn about default SECRET_KEY
+    if app.secret_key == "hunter-teampcp-session-key-change-me":
+        logger.warning(
+            "Using default SECRET_KEY – set SECRET_KEY env var for production!"
+        )
+
     _db.init_db()
     _db.migrate_from_json()
 

@@ -1,4 +1,4 @@
-requests>=2.28
-flask>=3.0
-packaging>=23.0
-gunicorn>=22.0
+requests>=2.28,<3
+flask>=3.0,<4
+packaging>=23.0,<25
+gunicorn>=22.0,<24

@@ -280,9 +280,9 @@ def classify(
           >= 50  → HIGH      (at least one strong signal)
           otherwise keep base severity
         """
-        if confidence >= 70:
+        if confidence >= config.CONFIDENCE_CRITICAL:
             return Severity.CRITICAL.value
-        if confidence >= 50:
+        if confidence >= config.CONFIDENCE_HIGH:
             return Severity.HIGH.value
         return base.value
 
